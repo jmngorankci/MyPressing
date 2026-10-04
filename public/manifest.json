@@ -1,0 +1,42 @@
+{
+  "name": "MyPressing - PWA Gestion Pressing & Blanchisserie",
+  "short_name": "MyPressing",
+  "description": "Application tactile professionnelle de gestion de pressing, guichet réception, atelier Kanban et caisse hors-ligne.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090d16",
+  "theme_color": "#2563eb",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Guichet Réception",
+      "url": "/",
+      "description": "Enregistrer un dépôt client et éditer le reçu"
+    },
+    {
+      "name": "Atelier Kanban",
+      "url": "/atelier",
+      "description": "Suivi des étapes de lavage et repassage"
+    },
+    {
+      "name": "Caisse & Retrait",
+      "url": "/caisse",
+      "description": "Encaissement du solde et restitution"
+    }
+  ],
+  "categories": ["business", "productivity", "utilities"]
+}

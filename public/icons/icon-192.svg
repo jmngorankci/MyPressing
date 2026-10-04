@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <defs>
+    <linearGradient id="pwaGrad192" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+  <rect width="192" height="192" rx="42" fill="url(#pwaGrad192)"/>
+  <circle cx="45" cy="40" r="10" fill="#ffffff" opacity="0.25"/>
+  <g transform="translate(36, 36)">
+    <rect x="8" y="8" width="104" height="104" rx="16" fill="#ffffff"/>
+    <circle cx="60" cy="66" r="30" fill="#0284c7" stroke="#38bdf8" stroke-width="4"/>
+    <rect x="18" y="18" width="26" height="10" rx="3" fill="#cbd5e1"/>
+    <circle cx="86" cy="23" r="5" fill="#0ea5e9"/>
+  </g>
+  <path d="M 140 25 Q 140 38 153 38 Q 140 38 140 51 Q 140 38 127 38 Q 140 38 140 25 Z" fill="#facc15"/>
+</svg>
