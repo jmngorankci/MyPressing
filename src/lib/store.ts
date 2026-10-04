@@ -8,6 +8,7 @@ import {
   initialArticles,
   initialClients,
   initialOrders,
+  DEFAULT_ORG_ID,
 } from './initialData';
 import {
   Client,
@@ -24,8 +25,9 @@ import {
 import { createClient as createSupabaseClient } from './supabase/client';
 
 const STORAGE_KEYS = {
-  STATE: 'mypressing_state_v5',
-  QUEUE: 'mypressing_offline_queue_v5',
+  STATE: 'mypressing_state_v6',
+  QUEUE: 'mypressing_offline_queue_v6',
+  PREV_STATE: 'mypressing_state_v5',
 };
 
 // Générateur d'UUID compatible v4 pour PostgreSQL / Supabase
@@ -118,14 +120,20 @@ function persistLocal() {
 function loadLocal() {
   if (typeof window === 'undefined') return;
   try {
-    const rawState = localStorage.getItem(STORAGE_KEYS.STATE);
+    const rawState = localStorage.getItem(STORAGE_KEYS.STATE) || localStorage.getItem(STORAGE_KEYS.PREV_STATE);
     if (rawState) {
       const parsed = JSON.parse(rawState);
-      if (parsed.settings && parsed.settings.shop_name === 'Pressing Royal Ivoire') {
-        parsed.settings.shop_name = initialSettings.shop_name;
-      }
+      const mergedSettings: Settings = {
+        ...initialSettings,
+        ...(parsed.settings || {}),
+        organization_id: parsed.settings?.organization_id || initialSettings.organization_id || DEFAULT_ORG_ID,
+        primary_color: parsed.settings?.primary_color || initialSettings.primary_color || '#2563eb',
+        ticket_header: parsed.settings?.ticket_header || initialSettings.ticket_header,
+        ticket_footer: parsed.settings?.ticket_footer || initialSettings.ticket_footer,
+      };
+
       memoryState = {
-        settings: parsed.settings || initialSettings,
+        settings: mergedSettings,
         categories: parsed.categories?.length ? parsed.categories : initialCategories,
         services: parsed.services?.length ? parsed.services : initialServices,
         articles: parsed.articles?.length ? parsed.articles : initialArticles,
@@ -349,6 +357,8 @@ export function usePressingStore() {
       isExpress: boolean;
       notes?: string;
     }) => {
+      const currentOrgId = memoryState.settings.organization_id || DEFAULT_ORG_ID;
+
       let client = memoryState.clients.find(
         (c) => c.phone.trim().replace(/\s+/g, '') === params.client.phone.trim().replace(/\s+/g, '')
       );
@@ -359,6 +369,7 @@ export function usePressingStore() {
           id: (params.client.id && params.client.id.length > 25 && !params.client.id.startsWith('cli-'))
             ? params.client.id
             : generateUuid(),
+          organization_id: currentOrgId,
           name: params.client.name,
           phone: params.client.phone,
           address: params.client.address || '',
@@ -369,6 +380,8 @@ export function usePressingStore() {
         updatedClients = [client, ...memoryState.clients];
       }
 
+      const activeClient: Client = client;
+
       const totalAmount = params.items.reduce((sum, item) => sum + item.totalPrice, 0);
       const remainingAmount = Math.max(0, totalAmount - params.advanceAmount);
       const paymentStatus =
@@ -377,10 +390,11 @@ export function usePressingStore() {
       const orderCounter = memoryState.orders.length + 42;
       const orderNumber = `PRS-2026-${String(orderCounter).padStart(4, '0')}`;
       const orderId = generateUuid();
-      const qrCodeValue = `${orderNumber}|${client.phone}|${totalAmount}`;
+      const qrCodeValue = `${orderNumber}|${activeClient.phone}|${totalAmount}`;
 
       const orderItems: OrderItem[] = params.items.map((item) => ({
         id: generateUuid(),
+        organization_id: currentOrgId,
         order_id: orderId,
         article_id: (item.articleId && item.articleId.length > 25 && !item.articleId.startsWith('custom-') && !item.articleId.startsWith('art-'))
           ? item.articleId
@@ -399,6 +413,7 @@ export function usePressingStore() {
           ? [
               {
                 id: generateUuid(),
+                organization_id: currentOrgId,
                 order_id: orderId,
                 amount: params.advanceAmount,
                 payment_method: params.paymentMethod,
@@ -413,9 +428,10 @@ export function usePressingStore() {
 
       const newOrder: OrderWithDetails = {
         id: orderId,
+        organization_id: currentOrgId,
         order_number: orderNumber,
-        client_id: client.id,
-        client,
+        client_id: activeClient.id,
+        client: activeClient,
         status: 'to_process',
         total_amount: totalAmount,
         advance_amount: params.advanceAmount,
@@ -445,11 +461,15 @@ export function usePressingStore() {
       if (isSupabaseConfigured && navigator.onLine) {
         try {
           const supabase = createSupabaseClient() as any;
-          await supabase.from('clients').upsert(client);
+          await supabase.from('clients').upsert({
+            ...activeClient,
+            organization_id: activeClient.organization_id || currentOrgId,
+          });
           await supabase.from('orders').insert({
             id: newOrder.id,
+            organization_id: newOrder.organization_id,
             order_number: newOrder.order_number,
-            client_id: client.id,
+            client_id: activeClient.id,
             status: newOrder.status,
             total_amount: newOrder.total_amount,
             advance_amount: newOrder.advance_amount,
@@ -608,8 +628,11 @@ export function usePressingStore() {
       const newRemaining = Math.max(0, order.total_amount - newAdvance);
       const newPaymentStatus = newRemaining === 0 ? 'paid' : 'partially_paid';
 
+      const currentOrgId = memoryState.settings.organization_id || DEFAULT_ORG_ID;
+
       const newPayment: Payment = {
         id: `pay-${Date.now()}`,
+        organization_id: order.organization_id || currentOrgId,
         order_id: params.orderId,
         amount: params.amountToPay,
         payment_method: params.paymentMethod,
@@ -693,8 +716,9 @@ export function usePressingStore() {
 
   // 4. CRÉATION OU MODIFICATION D'UN CLIENT
   const saveClient = useCallback(
-    (clientData: Omit<Client, 'id' | 'created_at' | 'updated_at'> & { id?: string }) => {
+    (clientData: Omit<Client, 'id' | 'created_at' | 'updated_at' | 'organization_id'> & { id?: string; organization_id?: string }) => {
       const existingIndex = memoryState.clients.findIndex((c) => c.id === clientData.id);
+      const currentOrgId = memoryState.settings.organization_id || DEFAULT_ORG_ID;
       let client: Client;
       let updatedClients: Client[];
 
@@ -702,6 +726,7 @@ export function usePressingStore() {
         client = {
           ...memoryState.clients[existingIndex],
           ...clientData,
+          organization_id: memoryState.clients[existingIndex].organization_id || currentOrgId,
           updated_at: new Date().toISOString(),
         };
         updatedClients = memoryState.clients.map((c, idx) => (idx === existingIndex ? client : c));
@@ -711,6 +736,7 @@ export function usePressingStore() {
           id: (clientData.id && clientData.id.length > 25 && !clientData.id.startsWith('cli-'))
             ? clientData.id
             : generateUuid(),
+          organization_id: currentOrgId,
           address: clientData.address || null,
           notes: clientData.notes || null,
           created_at: new Date().toISOString(),
@@ -728,6 +754,7 @@ export function usePressingStore() {
         const supabase = createSupabaseClient() as any;
         supabase.from('clients').upsert({
           id: client.id,
+          organization_id: client.organization_id,
           name: client.name,
           phone: client.phone,
           address: client.address,
@@ -750,6 +777,7 @@ export function usePressingStore() {
       const existingIndex = articleData.id
         ? memoryState.articles.findIndex((a) => a.id === articleData.id)
         : -1;
+      const currentOrgId = memoryState.settings.organization_id || DEFAULT_ORG_ID;
       let article: Article;
       let updatedArticles: Article[];
 
@@ -762,6 +790,7 @@ export function usePressingStore() {
         article = {
           ...memoryState.articles[existingIndex],
           ...articleData,
+          organization_id: memoryState.articles[existingIndex].organization_id || currentOrgId,
           category_id: validCategory,
           base_price: Number(articleData.base_price),
         };
@@ -771,6 +800,7 @@ export function usePressingStore() {
           id: (articleData.id && articleData.id.length > 25 && !articleData.id.startsWith('art-'))
             ? articleData.id
             : generateUuid(),
+          organization_id: currentOrgId,
           category_id: validCategory,
           name: articleData.name.trim(),
           base_price: Number(articleData.base_price),
@@ -790,6 +820,7 @@ export function usePressingStore() {
         const supabase = createSupabaseClient() as any;
         supabase.from('articles').upsert({
           id: article.id,
+          organization_id: article.organization_id,
           category_id: article.category_id,
           name: article.name,
           base_price: article.base_price,

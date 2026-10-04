@@ -7,7 +7,7 @@ import { Client } from '@/types/database';
 interface NewClientModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (clientData: Omit<Client, 'id' | 'created_at' | 'updated_at'>) => void;
+  onSave: (clientData: Omit<Client, 'id' | 'created_at' | 'updated_at' | 'organization_id'>) => void;
   initialPhone?: string;
 }
 

@@ -1,58 +1,83 @@
-import { Category, Article, Service, Client, OrderWithDetails, Settings } from '@/types/database';
+import { Category, Article, Service, Client, OrderWithDetails, Settings, Organization } from '@/types/database';
+
+export const DEFAULT_ORG_ID = '00000000-0000-0000-0000-000000000001';
+
+export const initialOrganization: Organization = {
+  id: DEFAULT_ORG_ID,
+  name: 'Pressing Royal Ivoire',
+  slug: 'pressing-royal-ivoire',
+  logo_url: null,
+  primary_color: '#2563eb',
+  phone: '+225 07 89 45 12 30',
+  email: 'contact@pressing-royal.ci',
+  address: 'Bd Latrille, Deux-Plateaux Vallons, Abidjan',
+  ticket_header: '*** PRESSING & BLANCHISSERIE HAUT DE GAMME ***',
+  ticket_footer: 'Merci pour votre confiance ! Tout vêtement non réclamé sous 90 jours sera cédé.',
+  currency: 'FCFA',
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+};
 
 export const initialSettings: Settings = {
   id: '74b57589-047d-497a-aacb-eac8868233a9',
+  organization_id: DEFAULT_ORG_ID,
   shop_name: 'Pressing Royal Ivoire',
   phone: '+225 07 89 45 12 30',
+  email: 'contact@pressing-royal.ci',
   address: 'Bd Latrille, Deux-Plateaux Vallons, Abidjan',
   currency: 'FCFA',
+  logo_url: null,
+  primary_color: '#2563eb',
+  ticket_header: '*** PRESSING & BLANCHISSERIE HAUT DE GAMME ***',
+  ticket_footer: 'Merci pour votre confiance ! Tout vêtement non réclamé sous 90 jours sera cédé.',
   default_pickup_days: 2,
   express_surcharge_percent: 50,
   sms_api_key: null,
   whatsapp_api_url: null,
-  whatsapp_template: 'Bonjour {{client_name}}, votre linge (Commande #{{order_number}}) est PRÊT au pressing. Reste à payer : {{remaining_amount}} {{currency}}. Merci de votre confiance !',
+  whatsapp_template: 'Bonjour {{client_name}}, vos vêtements déposés sous le ticket #{{order_number}} sont PRÊTS au pressing {{shop_name}}. Reste à payer : {{remaining_amount}} {{currency}}. Merci de votre confiance !',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
 };
 
 export const initialCategories: Category[] = [
-  { id: 'c1111111-1111-1111-1111-111111111111', name: 'Hauts & Chemises', icon: 'shirt', display_order: 1, created_at: new Date().toISOString() },
-  { id: 'c2222222-2222-2222-2222-222222222222', name: 'Bas & Pantalons', icon: 'scissors', display_order: 2, created_at: new Date().toISOString() },
-  { id: 'c3333333-3333-3333-3333-333333333333', name: 'Costumes & Robes', icon: 'sparkles', display_order: 3, created_at: new Date().toISOString() },
-  { id: 'c4444444-4444-4444-4444-444444444444', name: 'Traditionnel (Boubou/Pagne)', icon: 'crown', display_order: 4, created_at: new Date().toISOString() },
-  { id: 'c5555555-5555-5555-5555-555555555555', name: 'Linge de Maison', icon: 'bed', display_order: 5, created_at: new Date().toISOString() },
-  { id: 'c6666666-6666-6666-6666-666666666666', name: 'Chaussures & Cuir', icon: 'footprints', display_order: 6, created_at: new Date().toISOString() },
+  { id: 'c1111111-1111-1111-1111-111111111111', organization_id: DEFAULT_ORG_ID, name: 'Hauts & Chemises', icon: 'shirt', display_order: 1, created_at: new Date().toISOString() },
+  { id: 'c2222222-2222-2222-2222-222222222222', organization_id: DEFAULT_ORG_ID, name: 'Bas & Pantalons', icon: 'scissors', display_order: 2, created_at: new Date().toISOString() },
+  { id: 'c3333333-3333-3333-3333-333333333333', organization_id: DEFAULT_ORG_ID, name: 'Costumes & Robes', icon: 'sparkles', display_order: 3, created_at: new Date().toISOString() },
+  { id: 'c4444444-4444-4444-4444-444444444444', organization_id: DEFAULT_ORG_ID, name: 'Traditionnel (Boubou/Pagne)', icon: 'crown', display_order: 4, created_at: new Date().toISOString() },
+  { id: 'c5555555-5555-5555-5555-555555555555', organization_id: DEFAULT_ORG_ID, name: 'Linge de Maison', icon: 'bed', display_order: 5, created_at: new Date().toISOString() },
+  { id: 'c6666666-6666-6666-6666-666666666666', organization_id: DEFAULT_ORG_ID, name: 'Chaussures & Cuir', icon: 'footprints', display_order: 6, created_at: new Date().toISOString() },
 ];
 
 export const initialServices: Service[] = [
-  { id: 's1111111-1111-1111-1111-111111111111', code: 'wash', name: 'Lavage Seul', price_multiplier: 0.7, additional_fee: 0, default_delay_days: 1, created_at: new Date().toISOString() },
-  { id: 's2222222-2222-2222-2222-222222222222', code: 'iron', name: 'Repassage Seul', price_multiplier: 0.6, additional_fee: 0, default_delay_days: 1, created_at: new Date().toISOString() },
-  { id: 's3333333-3333-3333-3333-333333333333', code: 'full', name: 'Nettoyage Complet (Lavage + Repassage)', price_multiplier: 1.0, additional_fee: 0, default_delay_days: 2, created_at: new Date().toISOString() },
-  { id: 's4444444-4444-4444-4444-444444444444', code: 'express', name: 'Service Express 24h', price_multiplier: 1.5, additional_fee: 500, default_delay_days: 0, created_at: new Date().toISOString() },
+  { id: 's1111111-1111-1111-1111-111111111111', organization_id: DEFAULT_ORG_ID, code: 'wash', name: 'Lavage Seul', price_multiplier: 0.7, additional_fee: 0, default_delay_days: 1, created_at: new Date().toISOString() },
+  { id: 's2222222-2222-2222-2222-222222222222', organization_id: DEFAULT_ORG_ID, code: 'iron', name: 'Repassage Seul', price_multiplier: 0.6, additional_fee: 0, default_delay_days: 1, created_at: new Date().toISOString() },
+  { id: 's3333333-3333-3333-3333-333333333333', organization_id: DEFAULT_ORG_ID, code: 'full', name: 'Nettoyage Complet (Lavage + Repassage)', price_multiplier: 1.0, additional_fee: 0, default_delay_days: 2, created_at: new Date().toISOString() },
+  { id: 's4444444-4444-4444-4444-444444444444', organization_id: DEFAULT_ORG_ID, code: 'express', name: 'Service Express 24h', price_multiplier: 1.5, additional_fee: 500, default_delay_days: 0, created_at: new Date().toISOString() },
 ];
 
 export const initialArticles: Article[] = [
-  { id: '39f8ad04-be05-41b5-9621-4bd8678fd9d5', category_id: 'c1111111-1111-1111-1111-111111111111', name: 'Chemise Homme / Femme', base_price: 1000, icon: 'shirt', is_active: true, created_at: new Date().toISOString() },
-  { id: 'f3d56090-c3c9-409a-877c-274968419d12', category_id: 'c1111111-1111-1111-1111-111111111111', name: 'Polo / T-Shirt', base_price: 800, icon: 'shirt', is_active: true, created_at: new Date().toISOString() },
-  { id: 'd913382e-770a-4580-bc14-894bb4e6068b', category_id: 'c1111111-1111-1111-1111-111111111111', name: 'Veste Seule / Blazer', base_price: 2000, icon: 'sparkles', is_active: true, created_at: new Date().toISOString() },
-  { id: 'ce02da6e-c7b7-4fa2-bd32-25d0db01bb50', category_id: 'c2222222-2222-2222-2222-222222222222', name: 'Pantalon Classique', base_price: 1200, icon: 'scissors', is_active: true, created_at: new Date().toISOString() },
-  { id: '02500a23-bc7b-45d0-bdac-462006bd379e', category_id: 'c2222222-2222-2222-2222-222222222222', name: 'Jean / Denim', base_price: 1000, icon: 'scissors', is_active: true, created_at: new Date().toISOString() },
-  { id: '2c9e7eb3-c603-4903-8d00-7ec87b92bb62', category_id: 'c2222222-2222-2222-2222-222222222222', name: 'Jupe / Jupe Plissée', base_price: 1200, icon: 'scissors', is_active: true, created_at: new Date().toISOString() },
-  { id: '5f928e3b-9e90-4848-9c59-b13c7ee80d38', category_id: 'c3333333-3333-3333-3333-333333333333', name: 'Costume 2 Pièces', base_price: 3000, icon: 'sparkles', is_active: true, created_at: new Date().toISOString() },
-  { id: '5c010a30-0eb7-4d76-b51f-6ad2a3ea57cb', category_id: 'c3333333-3333-3333-3333-333333333333', name: 'Costume 3 Pièces', base_price: 4000, icon: 'sparkles', is_active: true, created_at: new Date().toISOString() },
-  { id: 'c375c3ef-a982-4df9-a1b6-d4e5f0a2022d', category_id: 'c3333333-3333-3333-3333-333333333333', name: 'Robe de Soirée / Cocktail', base_price: 3500, icon: 'sparkles', is_active: true, created_at: new Date().toISOString() },
-  { id: '6b651b14-8742-491c-bce0-6ca238356976', category_id: 'c4444444-4444-4444-4444-444444444444', name: 'Boubou Bazin Riche (3 Pièces)', base_price: 4500, icon: 'crown', is_active: true, created_at: new Date().toISOString() },
-  { id: 'a2eb445a-c603-4f95-bd7f-9e66bf39ef1b', category_id: 'c4444444-4444-4444-4444-444444444444', name: 'Complet Pagne Traditionnel', base_price: 2500, icon: 'crown', is_active: true, created_at: new Date().toISOString() },
-  { id: 'e16e6d19-3382-4682-8bc2-10f760da6ef2', category_id: 'c5555555-5555-5555-5555-555555555555', name: 'Couette Lit 2 Places', base_price: 4000, icon: 'bed', is_active: true, created_at: new Date().toISOString() },
-  { id: '7e23112b-2a74-4b55-89f5-7d5a5704bb84', category_id: 'c5555555-5555-5555-5555-555555555555', name: 'Drap / Housse de Couette', base_price: 1500, icon: 'bed', is_active: true, created_at: new Date().toISOString() },
-  { id: '5f3c1d9b-e854-478a-a43e-b81bb870cfa5', category_id: 'c5555555-5555-5555-5555-555555555555', name: 'Rideaux & Voilages (la paire)', base_price: 3000, icon: 'bed', is_active: true, created_at: new Date().toISOString() },
-  { id: 'bfdb0c47-3841-4770-985c-15a6b0c2e68f', category_id: 'c6666666-6666-6666-6666-666666666666', name: 'Sneakers / Baskets (Nettoyage pro)', base_price: 2500, icon: 'footprints', is_active: true, created_at: new Date().toISOString() },
-  { id: '8a2e1d6b-3e5f-4d92-9442-990a4fb118ef', category_id: 'c6666666-6666-6666-6666-666666666666', name: 'Veste en Cuir / Daim', base_price: 5000, icon: 'footprints', is_active: true, created_at: new Date().toISOString() },
+  { id: '39f8ad04-be05-41b5-9621-4bd8678fd9d5', organization_id: DEFAULT_ORG_ID, category_id: 'c1111111-1111-1111-1111-111111111111', name: 'Chemise Homme / Femme', base_price: 1000, icon: 'shirt', is_active: true, created_at: new Date().toISOString() },
+  { id: 'f3d56090-c3c9-409a-877c-274968419d12', organization_id: DEFAULT_ORG_ID, category_id: 'c1111111-1111-1111-1111-111111111111', name: 'Polo / T-Shirt', base_price: 800, icon: 'shirt', is_active: true, created_at: new Date().toISOString() },
+  { id: 'd913382e-770a-4580-bc14-894bb4e6068b', organization_id: DEFAULT_ORG_ID, category_id: 'c1111111-1111-1111-1111-111111111111', name: 'Veste Seule / Blazer', base_price: 2000, icon: 'sparkles', is_active: true, created_at: new Date().toISOString() },
+  { id: 'ce02da6e-c7b7-4fa2-bd32-25d0db01bb50', organization_id: DEFAULT_ORG_ID, category_id: 'c2222222-2222-2222-2222-222222222222', name: 'Pantalon Classique', base_price: 1200, icon: 'scissors', is_active: true, created_at: new Date().toISOString() },
+  { id: '02500a23-bc7b-45d0-bdac-462006bd379e', organization_id: DEFAULT_ORG_ID, category_id: 'c2222222-2222-2222-2222-222222222222', name: 'Jean / Denim', base_price: 1000, icon: 'scissors', is_active: true, created_at: new Date().toISOString() },
+  { id: '2c9e7eb3-c603-4903-8d00-7ec87b92bb62', organization_id: DEFAULT_ORG_ID, category_id: 'c2222222-2222-2222-2222-222222222222', name: 'Jupe / Jupe Plissée', base_price: 1200, icon: 'scissors', is_active: true, created_at: new Date().toISOString() },
+  { id: '5f928e3b-9e90-4848-9c59-b13c7ee80d38', organization_id: DEFAULT_ORG_ID, category_id: 'c3333333-3333-3333-3333-333333333333', name: 'Costume 2 Pièces', base_price: 3000, icon: 'sparkles', is_active: true, created_at: new Date().toISOString() },
+  { id: '5c010a30-0eb7-4d76-b51f-6ad2a3ea57cb', organization_id: DEFAULT_ORG_ID, category_id: 'c3333333-3333-3333-3333-333333333333', name: 'Costume 3 Pièces', base_price: 4000, icon: 'sparkles', is_active: true, created_at: new Date().toISOString() },
+  { id: 'c375c3ef-a982-4df9-a1b6-d4e5f0a2022d', organization_id: DEFAULT_ORG_ID, category_id: 'c3333333-3333-3333-3333-333333333333', name: 'Robe de Soirée / Cocktail', base_price: 3500, icon: 'sparkles', is_active: true, created_at: new Date().toISOString() },
+  { id: '6b651b14-8742-491c-bce0-6ca238356976', organization_id: DEFAULT_ORG_ID, category_id: 'c4444444-4444-4444-4444-444444444444', name: 'Boubou Bazin Riche (3 Pièces)', base_price: 4500, icon: 'crown', is_active: true, created_at: new Date().toISOString() },
+  { id: 'a2eb445a-c603-4f95-bd7f-9e66bf39ef1b', organization_id: DEFAULT_ORG_ID, category_id: 'c4444444-4444-4444-4444-444444444444', name: 'Complet Pagne Traditionnel', base_price: 2500, icon: 'crown', is_active: true, created_at: new Date().toISOString() },
+  { id: 'e16e6d19-3382-4682-8bc2-10f760da6ef2', organization_id: DEFAULT_ORG_ID, category_id: 'c5555555-5555-5555-5555-555555555555', name: 'Couette Lit 2 Places', base_price: 4000, icon: 'bed', is_active: true, created_at: new Date().toISOString() },
+  { id: '7e23112b-2a74-4b55-89f5-7d5a5704bb84', organization_id: DEFAULT_ORG_ID, category_id: 'c5555555-5555-5555-5555-555555555555', name: 'Drap / Housse de Couette', base_price: 1500, icon: 'bed', is_active: true, created_at: new Date().toISOString() },
+  { id: '5f3c1d9b-e854-478a-a43e-b81bb870cfa5', organization_id: DEFAULT_ORG_ID, category_id: 'c5555555-5555-5555-5555-555555555555', name: 'Rideaux & Voilages (la paire)', base_price: 3000, icon: 'bed', is_active: true, created_at: new Date().toISOString() },
+  { id: 'bfdb0c47-3841-4770-985c-15a6b0c2e68f', organization_id: DEFAULT_ORG_ID, category_id: 'c6666666-6666-6666-6666-666666666666', name: 'Sneakers / Baskets (Nettoyage pro)', base_price: 2500, icon: 'footprints', is_active: true, created_at: new Date().toISOString() },
+  { id: '8a2e1d6b-3e5f-4d92-9442-990a4fb118ef', organization_id: DEFAULT_ORG_ID, category_id: 'c6666666-6666-6666-6666-666666666666', name: 'Veste en Cuir / Daim', base_price: 5000, icon: 'footprints', is_active: true, created_at: new Date().toISOString() },
 ];
 
 export const initialClients: Client[] = [
   {
     id: 'f1111111-1111-1111-1111-111111111111',
+    organization_id: DEFAULT_ORG_ID,
     name: 'Kouassi Jean-Philippe',
     phone: '+225 07 47 12 34 56',
     address: 'Cocody Angré 7ème Tranche',
@@ -62,6 +87,7 @@ export const initialClients: Client[] = [
   },
   {
     id: 'f2222222-2222-2222-2222-222222222222',
+    organization_id: DEFAULT_ORG_ID,
     name: 'Amina Diallo Koné',
     phone: '+225 05 85 99 22 11',
     address: 'Plateau Indénié',
@@ -71,6 +97,7 @@ export const initialClients: Client[] = [
   },
   {
     id: 'f3333333-3333-3333-3333-333333333333',
+    organization_id: DEFAULT_ORG_ID,
     name: 'Marc-Aurèle Brou',
     phone: '+225 01 02 03 04 05',
     address: 'Riviera Bonoumin',
@@ -80,6 +107,7 @@ export const initialClients: Client[] = [
   },
   {
     id: 'f4444444-4444-4444-4444-444444444444',
+    organization_id: DEFAULT_ORG_ID,
     name: 'Fatou Bamba',
     phone: '+225 07 11 22 33 44',
     address: 'Marcory Zone 4',
@@ -98,6 +126,7 @@ const formatIso = (offsetDays: number) => {
 export const initialOrders: OrderWithDetails[] = [
   {
     id: 'e1111111-1111-1111-1111-111111111111',
+    organization_id: DEFAULT_ORG_ID,
     order_number: 'PRS-2026-0038',
     client_id: 'f1111111-1111-1111-1111-111111111111',
     client: initialClients[0],
@@ -118,6 +147,7 @@ export const initialOrders: OrderWithDetails[] = [
     items: [
       {
         id: 'd1111111-1111-1111-1111-111111111111',
+        organization_id: DEFAULT_ORG_ID,
         order_id: 'e1111111-1111-1111-1111-111111111111',
         article_id: '39f8ad04-be05-41b5-9621-4bd8678fd9d5',
         article_name: 'Chemise Homme / Femme',
@@ -130,6 +160,7 @@ export const initialOrders: OrderWithDetails[] = [
       },
       {
         id: 'd2222222-2222-2222-2222-222222222222',
+        organization_id: DEFAULT_ORG_ID,
         order_id: 'e1111111-1111-1111-1111-111111111111',
         article_id: 'd913382e-770a-4580-bc14-894bb4e6068b',
         article_name: 'Veste Seule / Blazer',
@@ -144,6 +175,7 @@ export const initialOrders: OrderWithDetails[] = [
     payments: [
       {
         id: 'b1111111-1111-1111-1111-111111111111',
+        organization_id: DEFAULT_ORG_ID,
         order_id: 'e1111111-1111-1111-1111-111111111111',
         amount: 2000,
         payment_method: 'wave',
@@ -157,6 +189,7 @@ export const initialOrders: OrderWithDetails[] = [
   },
   {
     id: 'e2222222-2222-2222-2222-222222222222',
+    organization_id: DEFAULT_ORG_ID,
     order_number: 'PRS-2026-0039',
     client_id: 'f2222222-2222-2222-2222-222222222222',
     client: initialClients[1],
@@ -177,6 +210,7 @@ export const initialOrders: OrderWithDetails[] = [
     items: [
       {
         id: 'd3333333-3333-3333-3333-333333333333',
+        organization_id: DEFAULT_ORG_ID,
         order_id: 'e2222222-2222-2222-2222-222222222222',
         article_id: '6b651b14-8742-491c-bce0-6ca238356976',
         article_name: 'Boubou Bazin Riche (3 Pièces)',
@@ -189,6 +223,7 @@ export const initialOrders: OrderWithDetails[] = [
       },
       {
         id: 'd4444444-4444-4444-4444-444444444444',
+        organization_id: DEFAULT_ORG_ID,
         order_id: 'e2222222-2222-2222-2222-222222222222',
         article_id: 'c375c3ef-a982-4df9-a1b6-d4e5f0a2022d',
         article_name: 'Robe de Soirée / Cocktail',
@@ -203,6 +238,7 @@ export const initialOrders: OrderWithDetails[] = [
     payments: [
       {
         id: 'b2222222-2222-2222-2222-222222222222',
+        organization_id: DEFAULT_ORG_ID,
         order_id: 'e2222222-2222-2222-2222-222222222222',
         amount: 8000,
         payment_method: 'orange_money',
@@ -213,5 +249,55 @@ export const initialOrders: OrderWithDetails[] = [
         created_at: formatIso(-0.5),
       },
     ],
+  },
+  {
+    id: 'e3333333-3333-3333-3333-333333333333',
+    organization_id: DEFAULT_ORG_ID,
+    order_number: 'PRS-2026-0040',
+    client_id: 'f3333333-3333-3333-3333-333333333333',
+    client: initialClients[2],
+    status: 'ready',
+    total_amount: 3500,
+    advance_amount: 0,
+    remaining_amount: 3500,
+    payment_status: 'unpaid',
+    payment_method: 'cash',
+    pickup_date: formatIso(0),
+    is_express: false,
+    notes: 'Linge prêt à emballer',
+    qr_code: 'PRS-2026-0040|+2250102030405|3500',
+    notification_sent: false,
+    notification_sent_at: null,
+    created_at: formatIso(-2),
+    updated_at: formatIso(0),
+    items: [
+      {
+        id: 'd5555555-5555-5555-5555-555555555555',
+        organization_id: DEFAULT_ORG_ID,
+        order_id: 'e3333333-3333-3333-3333-333333333333',
+        article_id: 'ce02da6e-c7b7-4fa2-bd32-25d0db01bb50',
+        article_name: 'Pantalon Classique',
+        service_code: 'full',
+        quantity: 2,
+        unit_price: 1200,
+        total_price: 2400,
+        notes: 'Pli marqué',
+        created_at: formatIso(-2),
+      },
+      {
+        id: 'd6666666-6666-6666-6666-666666666666',
+        organization_id: DEFAULT_ORG_ID,
+        order_id: 'e3333333-3333-3333-3333-333333333333',
+        article_id: 'f3d56090-c3c9-409a-877c-274968419d12',
+        article_name: 'Polo / T-Shirt',
+        service_code: 'iron',
+        quantity: 1,
+        unit_price: 800,
+        total_price: 800,
+        notes: 'Repassage simple',
+        created_at: formatIso(-2),
+      },
+    ],
+    payments: [],
   },
 ];

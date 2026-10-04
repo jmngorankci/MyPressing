@@ -19,10 +19,12 @@ import {
   Phone,
   Calculator,
   RotateCcw,
+  MessageSquare,
 } from 'lucide-react';
 import { usePressingStore } from '@/lib/store';
 import { OrderWithDetails, PaymentMethod } from '@/types/database';
 import { ReceiptModal } from '@/components/ReceiptModal';
+import { openWhatsAppOrderReady } from '@/lib/whatsapp';
 
 export default function CaisseRetraitPage() {
   const { orders, settings, checkoutAndDeliverOrder } = usePressingStore();
@@ -315,6 +317,18 @@ export default function CaisseRetraitPage() {
                 <p className="text-xs text-slate-400 font-mono">
                   {selectedOrder.client.phone} • {selectedOrder.client.address || 'Abidjan'}
                 </p>
+
+                <div className="mt-2.5 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openWhatsAppOrderReady(selectedOrder, settings)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition-all shadow-sm"
+                    title={`Envoyer message WhatsApp au client (${selectedOrder.client.phone})`}
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Relance WhatsApp 1-Click (Gratuit)</span>
+                  </button>
+                </div>
               </div>
 
               <div className="text-left sm:text-right">

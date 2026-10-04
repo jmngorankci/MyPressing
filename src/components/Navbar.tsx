@@ -32,6 +32,7 @@ export function Navbar() {
   const [isMounted, setIsMounted] = React.useState(false);
   const {
     orders,
+    settings,
     isOnline,
     isSyncing,
     pendingSyncCount,
@@ -42,6 +43,8 @@ export function Navbar() {
   React.useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  const primaryColor = (isMounted && settings?.primary_color) ? settings.primary_color : '#2563eb';
 
   // Compter les commandes par statut (sécurisé après montage)
   const activeOrdersCount = isMounted
@@ -76,31 +79,57 @@ export function Navbar() {
     },
     {
       href: '/parametres',
-      label: 'Tarifs & Paramètres',
+      label: 'Paramètres Blanchisserie',
       icon: Settings,
       badge: null,
     },
   ];
 
   return (
-    <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 text-slate-100 shadow-md">
+    <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 text-slate-100 shadow-md">
       <div className="max-w-7xl mx-auto px-3 sm:px-6">
         <div className="flex items-center justify-between h-16">
           
           {/* Logo & Pressing Info */}
           <Link href="/" className="flex items-center gap-3 group focus:outline-none">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/25 group-hover:scale-105 transition-transform">
-              <Sparkles className="w-5 h-5 text-white" />
-            </div>
+            {isMounted && settings?.logo_url ? (
+              <div 
+                className="w-10 h-10 rounded-xl overflow-hidden bg-white/5 p-0.5 border flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform"
+                style={{ borderColor: `${primaryColor}60` }}
+              >
+                <img
+                  src={settings.logo_url}
+                  alt={settings.shop_name || 'Logo'}
+                  className="w-full h-full object-contain rounded-lg"
+                />
+              </div>
+            ) : (
+              <div 
+                className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform text-white"
+                style={{
+                  backgroundColor: primaryColor,
+                  boxShadow: `0 8px 16px -2px ${primaryColor}40`,
+                }}
+              >
+                <Sparkles className="w-5 h-5 text-white" />
+              </div>
+            )}
             <div>
               <div className="flex items-center gap-2">
                 <ShopBrand />
-                <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                  PWA
+                <span 
+                  className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded border transition-colors"
+                  style={{
+                    backgroundColor: `${primaryColor}15`,
+                    borderColor: `${primaryColor}40`,
+                    color: primaryColor,
+                  }}
+                >
+                  SaaS B2B
                 </span>
               </div>
-              <p className="text-xs text-slate-400 hidden sm:block">
-                Caisse Tactile & Atelier Hors-ligne
+              <p className="text-xs text-slate-400 hidden sm:block truncate max-w-[220px]">
+                {isMounted && settings?.address ? settings.address : 'Caisse Tactile & Atelier Multi-Tenant'}
               </p>
             </div>
           </Link>
@@ -114,9 +143,10 @@ export function Navbar() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  style={isActive ? { backgroundColor: primaryColor, boxShadow: `0 8px 16px -2px ${primaryColor}40` } : undefined}
                   className={`relative flex items-center gap-2 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
                     isActive
-                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+                      ? 'text-white'
                       : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
                   }`}
                 >
@@ -125,7 +155,7 @@ export function Navbar() {
                   {item.badge !== null && (
                     <span
                       className={`text-[11px] font-bold px-1.5 py-0.2 rounded-full text-white ${
-                        item.badgeColor || (isActive ? 'bg-blue-900 text-blue-100' : 'bg-blue-600')
+                        item.badgeColor || (isActive ? 'bg-black/30 text-white' : 'bg-blue-600')
                       }`}
                     >
                       {item.badge}

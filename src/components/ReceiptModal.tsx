@@ -17,6 +17,7 @@ import {
   Flame,
 } from 'lucide-react';
 import { OrderWithDetails, Settings } from '@/types/database';
+import { formatWhatsAppPhoneNumber, generateOrderReadyWhatsAppMessage } from '@/lib/whatsapp';
 
 interface ReceiptModalProps {
   order: OrderWithDetails | null;
@@ -48,8 +49,8 @@ export function ReceiptModal({ order, settings, onClose }: ReceiptModalProps) {
     window.print();
   };
 
-  // Préparation du message WhatsApp
-  const cleanPhone = order.client.phone.replace(/[^0-9]/g, '');
+  // Préparation du message WhatsApp avec formatage robuste
+  const cleanPhone = formatWhatsAppPhoneNumber(order.client.phone);
   const itemsSummary = order.items
     .map((item) => `• ${item.quantity}x ${item.article_name} (${item.total_price.toLocaleString('fr-FR')} ${settings.currency})`)
     .join('\n');
@@ -58,7 +59,9 @@ export function ReceiptModal({ order, settings, onClose }: ReceiptModalProps) {
     ? `${window.location.origin}/suivi/${order.id}` 
     : `http://localhost:3000/suivi/${order.id}`;
 
-  const whatsappMessage = `*${settings.shop_name}* 🧺\n\nCher(e) *${order.client.name}*,\nVotre dépôt est bien enregistré !\n\n📋 *Commande :* #${order.order_number}\n📅 *Retrait prévu :* ${formattedPickup}\n\n*Articles déposés :*\n${itemsSummary}\n\n💰 *Total :* ${order.total_amount.toLocaleString('fr-FR')} ${settings.currency}\n💳 *Acompte :* ${order.advance_amount.toLocaleString('fr-FR')} ${settings.currency}\n⚠️ *Reste à payer :* ${order.remaining_amount.toLocaleString('fr-FR')} ${settings.currency}\n\n📱 *Suivre votre commande en direct :*\n${trackingUrl}\n\nMerci de votre confiance !`;
+  const whatsappMessage = order.status === 'ready'
+    ? generateOrderReadyWhatsAppMessage(order, settings)
+    : `*${settings.shop_name}* 🧺\n\nCher(e) *${order.client.name}*,\nVotre dépôt est bien enregistré !\n\n📋 *Commande :* #${order.order_number}\n📅 *Retrait prévu :* ${formattedPickup}\n\n*Articles déposés :*\n${itemsSummary}\n\n💰 *Total :* ${order.total_amount.toLocaleString('fr-FR')} ${settings.currency}\n💳 *Acompte :* ${order.advance_amount.toLocaleString('fr-FR')} ${settings.currency}\n⚠️ *Reste à payer :* ${order.remaining_amount.toLocaleString('fr-FR')} ${settings.currency}\n\n📱 *Suivre votre commande en direct :*\n${trackingUrl}\n\nMerci de votre confiance !`;
 
   const whatsappLink = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(whatsappMessage)}`;
 
@@ -94,14 +97,34 @@ export function ReceiptModal({ order, settings, onClose }: ReceiptModalProps) {
             ref={receiptRef}
             className="bg-white text-slate-900 p-5 rounded-xl border border-slate-200 shadow-md font-mono text-xs space-y-3"
           >
-            {/* Entête Pressing */}
+            {/* Entête Pressing avec Logo et En-tête Personnalisés */}
             <div className="text-center border-b border-dashed border-slate-300 pb-3">
+              {settings.logo_url && (
+                <div className="flex justify-center mb-2">
+                  <img
+                    src={settings.logo_url}
+                    alt={settings.shop_name}
+                    className="max-h-14 max-w-[170px] object-contain rounded"
+                  />
+                </div>
+              )}
+              {settings.ticket_header && (
+                <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1 px-2">
+                  {settings.ticket_header}
+                </div>
+              )}
               <h2 suppressHydrationWarning className="text-base font-extrabold uppercase tracking-tight text-slate-900">
                 {settings.shop_name}
               </h2>
               <p className="text-[11px] text-slate-600">{settings.address}</p>
               <p className="text-[11px] font-semibold text-slate-700">Tél : {settings.phone}</p>
-              <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 font-bold text-[11px]">
+              {settings.email && (
+                <p className="text-[10px] text-slate-500">{settings.email}</p>
+              )}
+              <div 
+                className="mt-2 inline-flex items-center gap-1 px-2.5 py-0.5 rounded font-bold text-[11px] text-white"
+                style={{ backgroundColor: settings.primary_color || '#2563eb' }}
+              >
                 TICKET DE DÉPÔT : #{order.order_number}
               </div>
             </div>
@@ -120,7 +143,10 @@ export function ReceiptModal({ order, settings, onClose }: ReceiptModalProps) {
                 <span className="text-slate-500">Date dépôt :</span>
                 <span>{formattedCreated}</span>
               </div>
-              <div className="flex justify-between font-bold text-blue-700">
+              <div 
+                className="flex justify-between font-bold"
+                style={{ color: settings.primary_color || '#1d4ed8' }}
+              >
                 <span>Date retrait :</span>
                 <span>{formattedPickup}</span>
               </div>
@@ -197,8 +223,8 @@ export function ReceiptModal({ order, settings, onClose }: ReceiptModalProps) {
               <p className="text-[10px] text-slate-500 mt-1.5">
                 Scannez pour suivre l&apos;état de votre linge
               </p>
-              <p className="text-[9px] text-slate-400 mt-0.5">
-                Les vêtements non réclamés après 3 mois seront cédés.
+              <p className="text-[9px] text-slate-500 mt-1 px-2 italic text-center font-sans">
+                {settings.ticket_footer || 'Merci de votre confiance ! Les vêtements non réclamés après 3 mois seront cédés.'}
               </p>
             </div>
           </div>

@@ -24,6 +24,7 @@ import {
 import { usePressingStore } from '@/lib/store';
 import { OrderStatus, OrderWithDetails } from '@/types/database';
 import { ReceiptModal } from '@/components/ReceiptModal';
+import { openWhatsAppOrderReady } from '@/lib/whatsapp';
 
 const COLUMNS: Array<{
   id: OrderStatus;
@@ -361,7 +362,7 @@ export default function AtelierKanbanPage() {
                                 {next === 'in_progress'
                                   ? 'Démarrer traitement'
                                   : next === 'ready'
-                                  ? 'Marquer PRÊT (SMS)'
+                                  ? 'Marquer PRÊT'
                                   : 'Valider retrait'}
                               </span>
                               <ArrowRight className="w-3.5 h-3.5" />
@@ -371,6 +372,19 @@ export default function AtelierKanbanPage() {
                               Commande clôturée
                             </div>
                           )}
+                        </div>
+
+                        {/* Déclencheur WhatsApp 1-Click gratuit */}
+                        <div className="pt-2 border-t border-slate-700/50">
+                          <button
+                            type="button"
+                            onClick={() => openWhatsAppOrderReady(order, settings)}
+                            className="w-full py-1.5 px-3 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all"
+                            title={`Relance WhatsApp gratuite vers ${order.client.phone}`}
+                          >
+                            <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>WhatsApp 1-Click : Prêt</span>
+                          </button>
                         </div>
 
                       </div>

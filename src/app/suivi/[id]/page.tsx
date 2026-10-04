@@ -72,12 +72,40 @@ export default function OrderTrackingPage({
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center p-4 sm:p-6">
       <div className="max-w-xl w-full space-y-5">
         
-        {/* En-tête Pressing */}
-        <div className="text-center space-y-1">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 text-xs font-semibold border border-blue-500/20">
+        {/* En-tête Pressing avec Logo */}
+        <div className="text-center space-y-1.5 flex flex-col items-center">
+          {settings.logo_url ? (
+            <div 
+              className="w-16 h-16 rounded-2xl bg-white/5 p-1 border flex items-center justify-center shadow-xl mb-1"
+              style={{ borderColor: `${settings.primary_color || '#2563eb'}50` }}
+            >
+              <img
+                src={settings.logo_url}
+                alt={settings.shop_name}
+                className="max-h-full max-w-full object-contain rounded-xl"
+              />
+            </div>
+          ) : (
+            <div 
+              className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg mb-1 text-white"
+              style={{ backgroundColor: settings.primary_color || '#2563eb' }}
+            >
+              <Sparkles className="w-6 h-6" />
+            </div>
+          )}
+
+          <div 
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold border"
+            style={{
+              backgroundColor: `${settings.primary_color || '#2563eb'}15`,
+              borderColor: `${settings.primary_color || '#2563eb'}40`,
+              color: settings.primary_color || '#60a5fa',
+            }}
+          >
             <Sparkles className="w-3.5 h-3.5" />
             <span>Suivi Client en Temps Réel</span>
           </div>
+
           <h1 suppressHydrationWarning className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
             {settings.shop_name}
           </h1>
