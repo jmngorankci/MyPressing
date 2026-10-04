@@ -19,6 +19,7 @@ import { usePressingStore } from '@/lib/store';
 
 export function Navbar() {
   const pathname = usePathname();
+  const [isMounted, setIsMounted] = React.useState(false);
   const {
     settings,
     orders,
@@ -29,12 +30,25 @@ export function Navbar() {
     triggerSync,
   } = usePressingStore();
 
-  // Compter les commandes par statut
-  const activeOrdersCount = orders.filter(
-    (o) => o.status === 'to_process' || o.status === 'in_progress' || o.status === 'ready'
-  ).length;
+  const [mountedShopName, setMountedShopName] = React.useState<string | null>(null);
 
-  const readyOrdersCount = orders.filter((o) => o.status === 'ready').length;
+  React.useEffect(() => {
+    setIsMounted(true);
+    if (settings?.shop_name) {
+      setMountedShopName(settings.shop_name);
+    }
+  }, [settings?.shop_name]);
+
+  // Compter les commandes par statut (sécurisé après montage)
+  const activeOrdersCount = isMounted
+    ? orders.filter(
+        (o) => o.status === 'to_process' || o.status === 'in_progress' || o.status === 'ready'
+      ).length
+    : 0;
+
+  const readyOrdersCount = isMounted
+    ? orders.filter((o) => o.status === 'ready').length
+    : 0;
 
   const navItems = [
     {
@@ -80,7 +94,7 @@ export function Navbar() {
                   suppressHydrationWarning
                   className="font-bold text-base sm:text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-blue-200 bg-clip-text text-transparent"
                 >
-                  {settings.shop_name}
+                  {mountedShopName || 'Pressing & Blanchisserie Le Majestueux'}
                 </span>
                 <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
                   PWA

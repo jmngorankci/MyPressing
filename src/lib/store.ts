@@ -121,6 +121,9 @@ function loadLocal() {
     const rawState = localStorage.getItem(STORAGE_KEYS.STATE);
     if (rawState) {
       const parsed = JSON.parse(rawState);
+      if (parsed.settings && parsed.settings.shop_name === 'Pressing Royal Ivoire') {
+        parsed.settings.shop_name = initialSettings.shop_name;
+      }
       memoryState = {
         settings: parsed.settings || initialSettings,
         categories: parsed.categories?.length ? parsed.categories : initialCategories,

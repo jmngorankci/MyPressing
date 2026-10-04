@@ -8,7 +8,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- 1. TABLE DES PARAMÈTRES GÉNÉRAUX DU PRESSING
 CREATE TABLE IF NOT EXISTS settings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    shop_name TEXT NOT NULL DEFAULT 'Pressing Royal Ivoire',
+    shop_name TEXT NOT NULL DEFAULT 'Pressing & Blanchisserie Le Majestueux',
     phone TEXT NOT NULL DEFAULT '+225 07 00 00 00 00',
     address TEXT NOT NULL DEFAULT 'Cocody Angré 8ème Tranche, Abidjan',
     currency TEXT NOT NULL DEFAULT 'FCFA',
