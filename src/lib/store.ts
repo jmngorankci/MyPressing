@@ -139,12 +139,12 @@ function loadLocal() {
   }
 }
 
-if (typeof window !== 'undefined') {
-  loadLocal();
-}
+// Variable pour s'assurer que le chargement local ne se fait qu'une fois
+let hasLoadedLocal = false;
 
 export function usePressingStore() {
   const storeState = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const [mounted, setMounted] = useState(false);
 
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
@@ -154,6 +154,17 @@ export function usePressingStore() {
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
     !process.env.NEXT_PUBLIC_SUPABASE_URL.includes('mock-pressing')
   );
+
+  useEffect(() => {
+    setMounted(true);
+    if (!hasLoadedLocal) {
+      hasLoadedLocal = true;
+      loadLocal();
+      notifyListeners();
+    }
+  }, []);
+
+  const activeState = mounted ? storeState : initialServerState;
 
   // Synchronisation descendante : récupération depuis Supabase
   const fetchFromSupabase = useCallback(async () => {
@@ -853,12 +864,13 @@ export function usePressingStore() {
 
   return {
     // États
-    settings: storeState.settings,
-    categories: storeState.categories,
-    services: storeState.services,
-    articles: storeState.articles,
-    clients: storeState.clients,
-    orders: storeState.orders,
+    settings: activeState.settings,
+    categories: activeState.categories,
+    services: activeState.services,
+    articles: activeState.articles,
+    clients: activeState.clients,
+    orders: activeState.orders,
+    isMounted: mounted,
     isOnline,
     isSyncing,
     pendingSyncCount: offlineQueue.length,

@@ -76,7 +76,10 @@ export function Navbar() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-bold text-base sm:text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-blue-200 bg-clip-text text-transparent">
+                <span
+                  suppressHydrationWarning
+                  className="font-bold text-base sm:text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-blue-200 bg-clip-text text-transparent"
+                >
                   {settings.shop_name}
                 </span>
                 <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">

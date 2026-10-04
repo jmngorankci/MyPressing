@@ -78,7 +78,7 @@ export default function OrderTrackingPage({
             <Sparkles className="w-3.5 h-3.5" />
             <span>Suivi Client en Temps Réel</span>
           </div>
-          <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
+          <h1 suppressHydrationWarning className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
             {settings.shop_name}
           </h1>
           <p className="text-xs text-slate-400 flex items-center justify-center gap-1">

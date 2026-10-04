@@ -96,7 +96,7 @@ export function ReceiptModal({ order, settings, onClose }: ReceiptModalProps) {
           >
             {/* Entête Pressing */}
             <div className="text-center border-b border-dashed border-slate-300 pb-3">
-              <h2 className="text-base font-extrabold uppercase tracking-tight text-slate-900">
+              <h2 suppressHydrationWarning className="text-base font-extrabold uppercase tracking-tight text-slate-900">
                 {settings.shop_name}
               </h2>
               <p className="text-[11px] text-slate-600">{settings.address}</p>
