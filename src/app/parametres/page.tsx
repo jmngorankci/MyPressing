@@ -81,21 +81,33 @@ export default function ParametresPage() {
     setIsArticleModalOpen(true);
   };
 
+  const [articleSuccessMsg, setArticleSuccessMsg] = useState<string | null>(null);
+
   const handleSaveArticleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingArticle || !editingArticle.name || !editingArticle.base_price) return;
+    if (!editingArticle || !editingArticle.name?.trim()) {
+      alert('Veuillez renseigner le nom de l\'article.');
+      return;
+    }
+    const price = Number(editingArticle.base_price);
+    if (isNaN(price) || price <= 0) {
+      alert('Veuillez renseigner un prix valide (supérieur à 0).');
+      return;
+    }
 
-    saveArticle({
+    const saved = saveArticle({
       id: editingArticle.id,
-      category_id: editingArticle.category_id || categories[0].id,
-      name: editingArticle.name,
-      base_price: Number(editingArticle.base_price),
+      category_id: editingArticle.category_id || categories[0]?.id || 'cat-1',
+      name: editingArticle.name.trim(),
+      base_price: price,
       icon: editingArticle.icon || 'Shirt',
       is_active: editingArticle.is_active !== undefined ? editingArticle.is_active : true,
     });
 
     setIsArticleModalOpen(false);
     setEditingArticle(null);
+    setArticleSuccessMsg(`Article "${saved.name}" enregistré avec succès !`);
+    setTimeout(() => setArticleSuccessMsg(null), 3000);
   };
 
   const handleSaveSettingsSubmit = (e: React.FormEvent) => {
@@ -185,6 +197,13 @@ export default function ParametresPage() {
       {activeTab === 'tarifs' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
           
+          {articleSuccessMsg && (
+            <div className="p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+              <Check className="w-4 h-4 text-emerald-400" />
+              <span>{articleSuccessMsg}</span>
+            </div>
+          )}
+
           {/* Barre d'action & Filtres */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">

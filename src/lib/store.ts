@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useSyncExternalStore, useState, useEffect, useCallback } from 'react';
 import {
   initialSettings,
   initialCategories,
@@ -24,8 +24,8 @@ import {
 import { createClient as createSupabaseClient } from './supabase/client';
 
 const STORAGE_KEYS = {
-  STATE: 'mypressing_state_v1',
-  QUEUE: 'mypressing_offline_queue_v1',
+  STATE: 'mypressing_state_v2',
+  QUEUE: 'mypressing_offline_queue_v2',
 };
 
 interface OfflineAction {
@@ -35,7 +35,7 @@ interface OfflineAction {
   timestamp: string;
 }
 
-interface PressingState {
+export interface PressingState {
   settings: Settings;
   categories: Category[];
   services: Service[];
@@ -43,6 +43,15 @@ interface PressingState {
   clients: Client[];
   orders: OrderWithDetails[];
 }
+
+const initialServerState: PressingState = {
+  settings: initialSettings,
+  categories: initialCategories,
+  services: initialServices,
+  articles: initialArticles,
+  clients: initialClients,
+  orders: initialOrders,
+};
 
 // Singleton state en mémoire
 let memoryState: PressingState = {
@@ -58,7 +67,28 @@ let offlineQueue: OfflineAction[] = [];
 let listeners: Array<() => void> = [];
 
 function notifyListeners() {
-  listeners.forEach((listener) => listener());
+  listeners.forEach((listener) => {
+    try {
+      listener();
+    } catch (err) {
+      console.error('Listener notification error:', err);
+    }
+  });
+}
+
+function subscribe(callback: () => void) {
+  listeners.push(callback);
+  return () => {
+    listeners = listeners.filter((l) => l !== callback);
+  };
+}
+
+function getSnapshot(): PressingState {
+  return memoryState;
+}
+
+function getServerSnapshot(): PressingState {
+  return initialServerState;
 }
 
 // Sauvegarde synchrone dans localStorage
@@ -81,11 +111,11 @@ function loadLocal() {
       const parsed = JSON.parse(rawState);
       memoryState = {
         settings: parsed.settings || initialSettings,
-        categories: parsed.categories || initialCategories,
-        services: parsed.services || initialServices,
-        articles: parsed.articles || initialArticles,
-        clients: parsed.clients || initialClients,
-        orders: parsed.orders || initialOrders,
+        categories: parsed.categories?.length ? parsed.categories : initialCategories,
+        services: parsed.services?.length ? parsed.services : initialServices,
+        articles: parsed.articles?.length ? parsed.articles : initialArticles,
+        clients: parsed.clients?.length ? parsed.clients : initialClients,
+        orders: parsed.orders?.length ? parsed.orders : initialOrders,
       };
     }
     const rawQueue = localStorage.getItem(STORAGE_KEYS.QUEUE);
@@ -97,21 +127,19 @@ function loadLocal() {
   }
 }
 
-// Initialiser le state côté client
+// Initialiser le state côté client au démarrage du module
 if (typeof window !== 'undefined') {
   loadLocal();
 }
 
 export function usePressingStore() {
-  const [, setTick] = useState(0);
+  const storeState = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
 
   useEffect(() => {
-    const listener = () => setTick((t) => t + 1);
-    listeners.push(listener);
-
     if (typeof window !== 'undefined') {
       setIsOnline(navigator.onLine);
       const handleOnline = () => {
@@ -124,15 +152,10 @@ export function usePressingStore() {
       window.addEventListener('offline', handleOffline);
 
       return () => {
-        listeners = listeners.filter((l) => l !== listener);
         window.removeEventListener('online', handleOnline);
         window.removeEventListener('offline', handleOffline);
       };
     }
-
-    return () => {
-      listeners = listeners.filter((l) => l !== listener);
-    };
   }, []);
 
   // Déclencheur de synchronisation hors-ligne -> Supabase
@@ -147,7 +170,6 @@ export function usePressingStore() {
         !process.env.NEXT_PUBLIC_SUPABASE_URL.includes('mock-pressing');
 
       if (isSupabaseConfigured && navigator.onLine) {
-        // Envoi réel vers Supabase
         for (const action of [...offlineQueue]) {
           if (action.type === 'CREATE_ORDER') {
             const { order, client, items } = action.payload;
@@ -187,6 +209,8 @@ export function usePressingStore() {
                 status: action.payload.status,
               })
               .eq('id', action.payload.orderId);
+          } else if (action.type === 'UPDATE_ARTICLE') {
+            await supabase.from('articles').upsert(action.payload);
           }
         }
       }
@@ -224,11 +248,11 @@ export function usePressingStore() {
       isExpress: boolean;
       notes?: string;
     }) => {
-      // 1. Gestion ou création du client
       let client = memoryState.clients.find(
         (c) => c.phone.trim().replace(/\s+/g, '') === params.client.phone.trim().replace(/\s+/g, '')
       );
 
+      let updatedClients = memoryState.clients;
       if (!client) {
         client = {
           id: params.client.id || `cli-${Date.now()}`,
@@ -239,16 +263,14 @@ export function usePressingStore() {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
-        memoryState.clients = [client, ...memoryState.clients];
+        updatedClients = [client, ...memoryState.clients];
       }
 
-      // 2. Calcul des montants
       const totalAmount = params.items.reduce((sum, item) => sum + item.totalPrice, 0);
       const remainingAmount = Math.max(0, totalAmount - params.advanceAmount);
       const paymentStatus =
         remainingAmount === 0 ? 'paid' : params.advanceAmount > 0 ? 'partially_paid' : 'unpaid';
 
-      // 3. Numéro de commande formaté
       const orderCounter = memoryState.orders.length + 42;
       const orderNumber = `PRS-2026-${String(orderCounter).padStart(4, '0')}`;
       const orderId = `ord-${Date.now()}`;
@@ -307,8 +329,13 @@ export function usePressingStore() {
         payments,
       };
 
-      // Sauvegarde locale instantanée (Offline First)
-      memoryState.orders = [newOrder, ...memoryState.orders];
+      // Mutation immuable du state
+      memoryState = {
+        ...memoryState,
+        clients: updatedClients,
+        orders: [newOrder, ...memoryState.orders],
+      };
+
       offlineQueue.push({
         id: `act-${Date.now()}`,
         type: 'CREATE_ORDER',
@@ -319,7 +346,6 @@ export function usePressingStore() {
       persistLocal();
       notifyListeners();
 
-      // Tentative de synchronisation en tâche de fond si connecté
       if (typeof window !== 'undefined' && navigator.onLine) {
         triggerSync();
       }
@@ -343,7 +369,6 @@ export function usePressingStore() {
         updated_at: new Date().toISOString(),
       };
 
-      // Si passage au statut "PRÊT", déclencher la notification SMS / WhatsApp
       let notificationTriggered = false;
       let notificationDetails: any = null;
 
@@ -374,7 +399,6 @@ export function usePressingStore() {
           directWhatsAppUrl,
         };
 
-        // Dispatch de l'événement global pour affichage modal / toast
         if (typeof window !== 'undefined') {
           window.dispatchEvent(
             new CustomEvent('pressing:notify-ready', { detail: notificationDetails })
@@ -382,7 +406,13 @@ export function usePressingStore() {
         }
       }
 
-      memoryState.orders[orderIndex] = updatedOrder;
+      const updatedOrders = [...memoryState.orders];
+      updatedOrders[orderIndex] = updatedOrder;
+
+      memoryState = {
+        ...memoryState,
+        orders: updatedOrders,
+      };
 
       offlineQueue.push({
         id: `act-${Date.now()}`,
@@ -435,7 +465,7 @@ export function usePressingStore() {
 
       const updatedOrder: OrderWithDetails = {
         ...order,
-        status: 'delivered', // Retiré et archivé
+        status: 'delivered',
         advance_amount: newAdvance,
         remaining_amount: newRemaining,
         payment_status: newPaymentStatus,
@@ -443,7 +473,13 @@ export function usePressingStore() {
         payments: [...(order.payments || []), newPayment],
       };
 
-      memoryState.orders[orderIndex] = updatedOrder;
+      const updatedOrders = [...memoryState.orders];
+      updatedOrders[orderIndex] = updatedOrder;
+
+      memoryState = {
+        ...memoryState,
+        orders: updatedOrders,
+      };
 
       offlineQueue.push({
         id: `act-${Date.now()}`,
@@ -472,80 +508,114 @@ export function usePressingStore() {
   );
 
   // 4. CRÉATION OU MODIFICATION D'UN CLIENT
-  const saveClient = useCallback((clientData: Omit<Client, 'id' | 'created_at' | 'updated_at'> & { id?: string }) => {
-    const existingIndex = memoryState.clients.findIndex((c) => c.id === clientData.id);
-    let client: Client;
+  const saveClient = useCallback(
+    (clientData: Omit<Client, 'id' | 'created_at' | 'updated_at'> & { id?: string }) => {
+      const existingIndex = memoryState.clients.findIndex((c) => c.id === clientData.id);
+      let client: Client;
+      let updatedClients: Client[];
 
-    if (existingIndex >= 0) {
-      client = {
-        ...memoryState.clients[existingIndex],
-        ...clientData,
-        updated_at: new Date().toISOString(),
-      };
-      memoryState.clients[existingIndex] = client;
-    } else {
-      client = {
-        ...clientData,
-        id: clientData.id || `cli-${Date.now()}`,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      memoryState.clients = [client, ...memoryState.clients];
-    }
+      if (existingIndex >= 0) {
+        client = {
+          ...memoryState.clients[existingIndex],
+          ...clientData,
+          updated_at: new Date().toISOString(),
+        };
+        updatedClients = memoryState.clients.map((c, idx) => (idx === existingIndex ? client : c));
+      } else {
+        client = {
+          ...clientData,
+          id: clientData.id || `cli-${Date.now()}`,
+          address: clientData.address || null,
+          notes: clientData.notes || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        updatedClients = [client, ...memoryState.clients];
+      }
 
-    persistLocal();
-    notifyListeners();
-    return client;
-  }, []);
+      memoryState = {
+        ...memoryState,
+        clients: updatedClients,
+      };
+
+      persistLocal();
+      notifyListeners();
+      return client;
+    },
+    []
+  );
 
   // 5. GESTION DES TARIFS & ARTICLES (PARAMÈTRES CRUD)
-  const saveArticle = useCallback((articleData: Partial<Article> & { name: string; base_price: number; category_id: string }) => {
-    const existingIndex = memoryState.articles.findIndex((a) => a.id === articleData.id);
-    let article: Article;
+  const saveArticle = useCallback(
+    (articleData: Partial<Article> & { name: string; base_price: number; category_id: string }) => {
+      const existingIndex = articleData.id
+        ? memoryState.articles.findIndex((a) => a.id === articleData.id)
+        : -1;
+      let article: Article;
+      let updatedArticles: Article[];
 
-    if (existingIndex >= 0) {
-      article = {
-        ...memoryState.articles[existingIndex],
-        ...articleData,
+      if (existingIndex >= 0) {
+        article = {
+          ...memoryState.articles[existingIndex],
+          ...articleData,
+          base_price: Number(articleData.base_price),
+        };
+        updatedArticles = memoryState.articles.map((a, idx) => (idx === existingIndex ? article : a));
+      } else {
+        article = {
+          id: `art-${Date.now()}`,
+          category_id: articleData.category_id,
+          name: articleData.name.trim(),
+          base_price: Number(articleData.base_price),
+          icon: articleData.icon || 'Shirt',
+          is_active: articleData.is_active !== undefined ? articleData.is_active : true,
+          created_at: new Date().toISOString(),
+        };
+        updatedArticles = [article, ...memoryState.articles];
+      }
+
+      memoryState = {
+        ...memoryState,
+        articles: updatedArticles,
       };
-      memoryState.articles[existingIndex] = article;
-    } else {
-      article = {
-        id: `art-${Date.now()}`,
-        category_id: articleData.category_id,
-        name: articleData.name,
-        base_price: articleData.base_price,
-        icon: articleData.icon || 'Shirt',
-        is_active: articleData.is_active !== undefined ? articleData.is_active : true,
-        created_at: new Date().toISOString(),
-      };
-      memoryState.articles = [article, ...memoryState.articles];
-    }
 
-    offlineQueue.push({
-      id: `act-${Date.now()}`,
-      type: 'UPDATE_ARTICLE',
-      payload: article,
-      timestamp: new Date().toISOString(),
-    });
+      offlineQueue.push({
+        id: `act-${Date.now()}`,
+        type: 'UPDATE_ARTICLE',
+        payload: article,
+        timestamp: new Date().toISOString(),
+      });
 
-    persistLocal();
-    notifyListeners();
-    return article;
-  }, []);
+      persistLocal();
+      notifyListeners();
+
+      if (typeof window !== 'undefined' && navigator.onLine) {
+        triggerSync();
+      }
+
+      return article;
+    },
+    [triggerSync]
+  );
 
   const deleteArticle = useCallback((articleId: string) => {
-    memoryState.articles = memoryState.articles.filter((a) => a.id !== articleId);
+    memoryState = {
+      ...memoryState,
+      articles: memoryState.articles.filter((a) => a.id !== articleId),
+    };
     persistLocal();
     notifyListeners();
   }, []);
 
   // 6. GESTION DES PARAMÈTRES GÉNÉRAUX
   const saveSettings = useCallback((newSettings: Partial<Settings>) => {
-    memoryState.settings = {
-      ...memoryState.settings,
-      ...newSettings,
-      updated_at: new Date().toISOString(),
+    memoryState = {
+      ...memoryState,
+      settings: {
+        ...memoryState.settings,
+        ...newSettings,
+        updated_at: new Date().toISOString(),
+      },
     };
 
     offlineQueue.push({
@@ -576,13 +646,13 @@ export function usePressingStore() {
   }, []);
 
   return {
-    // États
-    settings: memoryState.settings,
-    categories: memoryState.categories,
-    services: memoryState.services,
-    articles: memoryState.articles,
-    clients: memoryState.clients,
-    orders: memoryState.orders,
+    // États réactifs avec useSyncExternalStore
+    settings: storeState.settings,
+    categories: storeState.categories,
+    services: storeState.services,
+    articles: storeState.articles,
+    clients: storeState.clients,
+    orders: storeState.orders,
     isOnline,
     isSyncing,
     pendingSyncCount: offlineQueue.length,
