@@ -24,8 +24,8 @@ import {
 import { createClient as createSupabaseClient } from './supabase/client';
 
 const STORAGE_KEYS = {
-  STATE: 'mypressing_state_v2',
-  QUEUE: 'mypressing_offline_queue_v2',
+  STATE: 'mypressing_state_v3',
+  QUEUE: 'mypressing_offline_queue_v3',
 };
 
 interface OfflineAction {
@@ -127,7 +127,6 @@ function loadLocal() {
   }
 }
 
-// Initialiser le state côté client au démarrage du module
 if (typeof window !== 'undefined') {
   loadLocal();
 }
@@ -139,37 +138,87 @@ export function usePressingStore() {
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setIsOnline(navigator.onLine);
-      const handleOnline = () => {
-        setIsOnline(true);
-        triggerSync();
-      };
-      const handleOffline = () => setIsOnline(false);
+  const isSupabaseConfigured = Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    !process.env.NEXT_PUBLIC_SUPABASE_URL.includes('mock-pressing')
+  );
 
-      window.addEventListener('online', handleOnline);
-      window.addEventListener('offline', handleOffline);
+  // Synchronisation descendante : récupération depuis Supabase
+  const fetchFromSupabase = useCallback(async () => {
+    if (!isSupabaseConfigured || !navigator.onLine) return;
 
-      return () => {
-        window.removeEventListener('online', handleOnline);
-        window.removeEventListener('offline', handleOffline);
-      };
+    try {
+      const supabase = createSupabaseClient() as any;
+
+      const [
+        { data: sbSettings },
+        { data: sbCategories },
+        { data: sbServices },
+        { data: sbArticles },
+        { data: sbClients },
+        { data: sbOrders },
+      ] = await Promise.all([
+        supabase.from('settings').select('*').limit(1).maybeSingle(),
+        supabase.from('categories').select('*').order('display_order', { ascending: true }),
+        supabase.from('services').select('*'),
+        supabase.from('articles').select('*').order('created_at', { ascending: true }),
+        supabase.from('clients').select('*').order('created_at', { ascending: false }),
+        supabase.from('orders').select(`
+          *,
+          client:clients (*),
+          items:order_items (*),
+          payments:payments (*)
+        `).order('created_at', { ascending: false }),
+      ]);
+
+      let hasChanges = false;
+      const newState = { ...memoryState };
+
+      if (sbSettings) {
+        newState.settings = sbSettings;
+        hasChanges = true;
+      }
+      if (sbCategories && sbCategories.length > 0) {
+        newState.categories = sbCategories;
+        hasChanges = true;
+      }
+      if (sbServices && sbServices.length > 0) {
+        newState.services = sbServices;
+        hasChanges = true;
+      }
+      if (sbArticles && sbArticles.length > 0) {
+        newState.articles = sbArticles;
+        hasChanges = true;
+      }
+      if (sbClients && sbClients.length > 0) {
+        newState.clients = sbClients;
+        hasChanges = true;
+      }
+      if (sbOrders && sbOrders.length > 0) {
+        newState.orders = sbOrders;
+        hasChanges = true;
+      }
+
+      if (hasChanges) {
+        memoryState = newState;
+        persistLocal();
+        notifyListeners();
+      }
+      setLastSyncTime(new Date().toLocaleTimeString('fr-FR'));
+    } catch (err) {
+      console.warn('[SUPABASE] Erreur lors de la récupération initiale:', err);
     }
-  }, []);
+  }, [isSupabaseConfigured]);
 
-  // Déclencheur de synchronisation hors-ligne -> Supabase
+  // Synchronisation montante : envoi de la file d'attente vers Supabase
   const triggerSync = useCallback(async () => {
-    if (offlineQueue.length === 0) return { success: true, count: 0 };
+    if (!isSupabaseConfigured) return { success: true, count: 0 };
     setIsSyncing(true);
 
     try {
       const supabase = createSupabaseClient() as any;
-      const isSupabaseConfigured =
-        process.env.NEXT_PUBLIC_SUPABASE_URL &&
-        !process.env.NEXT_PUBLIC_SUPABASE_URL.includes('mock-pressing');
 
-      if (isSupabaseConfigured && navigator.onLine) {
+      if (offlineQueue.length > 0 && navigator.onLine) {
         for (const action of [...offlineQueue]) {
           if (action.type === 'CREATE_ORDER') {
             const { order, client, items } = action.payload;
@@ -213,21 +262,47 @@ export function usePressingStore() {
             await supabase.from('articles').upsert(action.payload);
           }
         }
+        offlineQueue = [];
       }
 
-      const count = offlineQueue.length;
-      offlineQueue = [];
+      // Recharger les données fraîches depuis Supabase
+      await fetchFromSupabase();
+
       persistLocal();
-      setLastSyncTime(new Date().toLocaleTimeString('fr-FR'));
       notifyListeners();
-      return { success: true, count };
+      setLastSyncTime(new Date().toLocaleTimeString('fr-FR'));
+      return { success: true, count: offlineQueue.length };
     } catch (err) {
       console.warn('Sync failed (will retry):', err);
       return { success: false, error: err };
     } finally {
       setIsSyncing(false);
     }
-  }, []);
+  }, [fetchFromSupabase, isSupabaseConfigured]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsOnline(navigator.onLine);
+      const handleOnline = () => {
+        setIsOnline(true);
+        triggerSync();
+      };
+      const handleOffline = () => setIsOnline(false);
+
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+
+      // Chargement initial depuis Supabase au montage
+      if (isSupabaseConfigured && navigator.onLine) {
+        fetchFromSupabase();
+      }
+
+      return () => {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+      };
+    }
+  }, [fetchFromSupabase, isSupabaseConfigured, triggerSync]);
 
   // 1. CRÉATION D'UNE COMMANDE AU GUICHET (RÉCEPTION)
   const createOrder = useCallback(
@@ -279,7 +354,7 @@ export function usePressingStore() {
       const orderItems: OrderItem[] = params.items.map((item, idx) => ({
         id: `item-${orderId}-${idx + 1}`,
         order_id: orderId,
-        article_id: item.articleId,
+        article_id: item.articleId.startsWith('custom-') ? null : item.articleId,
         article_name: item.articleName,
         service_code: item.serviceCode,
         quantity: item.quantity,
@@ -329,30 +404,64 @@ export function usePressingStore() {
         payments,
       };
 
-      // Mutation immuable du state
+      // Sauvegarde locale instantanée
       memoryState = {
         ...memoryState,
         clients: updatedClients,
         orders: [newOrder, ...memoryState.orders],
       };
 
-      offlineQueue.push({
-        id: `act-${Date.now()}`,
-        type: 'CREATE_ORDER',
-        payload: { order: newOrder, client, items: orderItems },
-        timestamp: new Date().toISOString(),
-      });
+      // Si Supabase est connecté et en ligne, insertion directe
+      if (isSupabaseConfigured && navigator.onLine) {
+        try {
+          const supabase = createSupabaseClient() as any;
+          await supabase.from('clients').upsert(client);
+          await supabase.from('orders').insert({
+            id: newOrder.id,
+            order_number: newOrder.order_number,
+            client_id: client.id,
+            status: newOrder.status,
+            total_amount: newOrder.total_amount,
+            advance_amount: newOrder.advance_amount,
+            remaining_amount: newOrder.remaining_amount,
+            payment_status: newOrder.payment_status,
+            payment_method: newOrder.payment_method,
+            pickup_date: newOrder.pickup_date,
+            is_express: newOrder.is_express,
+            notes: newOrder.notes,
+            qr_code: newOrder.qr_code,
+            notification_sent: newOrder.notification_sent,
+          });
+          if (orderItems.length > 0) {
+            await supabase.from('order_items').insert(orderItems);
+          }
+          if (payments.length > 0) {
+            await supabase.from('payments').insert(payments);
+          }
+        } catch (dbErr) {
+          console.warn('[SUPABASE] Insertion directe échouée, mise en file d\'attente:', dbErr);
+          offlineQueue.push({
+            id: `act-${Date.now()}`,
+            type: 'CREATE_ORDER',
+            payload: { order: newOrder, client, items: orderItems },
+            timestamp: new Date().toISOString(),
+          });
+        }
+      } else {
+        offlineQueue.push({
+          id: `act-${Date.now()}`,
+          type: 'CREATE_ORDER',
+          payload: { order: newOrder, client, items: orderItems },
+          timestamp: new Date().toISOString(),
+        });
+      }
 
       persistLocal();
       notifyListeners();
 
-      if (typeof window !== 'undefined' && navigator.onLine) {
-        triggerSync();
-      }
-
       return newOrder;
     },
-    [triggerSync]
+    [isSupabaseConfigured]
   );
 
   // 2. MISE À JOUR DE STATUT DANS LE KANBAN ATELIER
@@ -414,23 +523,41 @@ export function usePressingStore() {
         orders: updatedOrders,
       };
 
-      offlineQueue.push({
-        id: `act-${Date.now()}`,
-        type: 'UPDATE_STATUS',
-        payload: { orderId, status: newStatus },
-        timestamp: new Date().toISOString(),
-      });
+      if (isSupabaseConfigured && navigator.onLine) {
+        try {
+          const supabase = createSupabaseClient() as any;
+          await supabase
+            .from('orders')
+            .update({
+              status: newStatus,
+              notification_sent: updatedOrder.notification_sent,
+              notification_sent_at: updatedOrder.notification_sent_at,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', orderId);
+        } catch (err) {
+          offlineQueue.push({
+            id: `act-${Date.now()}`,
+            type: 'UPDATE_STATUS',
+            payload: { orderId, status: newStatus },
+            timestamp: new Date().toISOString(),
+          });
+        }
+      } else {
+        offlineQueue.push({
+          id: `act-${Date.now()}`,
+          type: 'UPDATE_STATUS',
+          payload: { orderId, status: newStatus },
+          timestamp: new Date().toISOString(),
+        });
+      }
 
       persistLocal();
       notifyListeners();
 
-      if (typeof window !== 'undefined' && navigator.onLine) {
-        triggerSync();
-      }
-
       return { order: updatedOrder, notificationTriggered, notificationDetails };
     },
-    [triggerSync]
+    [isSupabaseConfigured]
   );
 
   // 3. ENCAISSEMENT ET RETRAIT DU LINGE EN CAISSE
@@ -481,30 +608,57 @@ export function usePressingStore() {
         orders: updatedOrders,
       };
 
-      offlineQueue.push({
-        id: `act-${Date.now()}`,
-        type: 'RECORD_PAYMENT',
-        payload: {
-          orderId: params.orderId,
-          payment: newPayment,
-          advance_amount: newAdvance,
-          remaining_amount: newRemaining,
-          payment_status: newPaymentStatus,
-          status: 'delivered',
-        },
-        timestamp: new Date().toISOString(),
-      });
+      if (isSupabaseConfigured && navigator.onLine) {
+        try {
+          const supabase = createSupabaseClient() as any;
+          await supabase.from('payments').insert(newPayment);
+          await supabase
+            .from('orders')
+            .update({
+              status: 'delivered',
+              advance_amount: newAdvance,
+              remaining_amount: newRemaining,
+              payment_status: newPaymentStatus,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', params.orderId);
+        } catch (err) {
+          offlineQueue.push({
+            id: `act-${Date.now()}`,
+            type: 'RECORD_PAYMENT',
+            payload: {
+              orderId: params.orderId,
+              payment: newPayment,
+              advance_amount: newAdvance,
+              remaining_amount: newRemaining,
+              payment_status: newPaymentStatus,
+              status: 'delivered',
+            },
+            timestamp: new Date().toISOString(),
+          });
+        }
+      } else {
+        offlineQueue.push({
+          id: `act-${Date.now()}`,
+          type: 'RECORD_PAYMENT',
+          payload: {
+            orderId: params.orderId,
+            payment: newPayment,
+            advance_amount: newAdvance,
+            remaining_amount: newRemaining,
+            payment_status: newPaymentStatus,
+            status: 'delivered',
+          },
+          timestamp: new Date().toISOString(),
+        });
+      }
 
       persistLocal();
       notifyListeners();
 
-      if (typeof window !== 'undefined' && navigator.onLine) {
-        triggerSync();
-      }
-
       return updatedOrder;
     },
-    [triggerSync]
+    [isSupabaseConfigured]
   );
 
   // 4. CRÉATION OU MODIFICATION D'UN CLIENT
@@ -538,11 +692,16 @@ export function usePressingStore() {
         clients: updatedClients,
       };
 
+      if (isSupabaseConfigured && navigator.onLine) {
+        const supabase = createSupabaseClient() as any;
+        supabase.from('clients').upsert(client).then();
+      }
+
       persistLocal();
       notifyListeners();
       return client;
     },
-    []
+    [isSupabaseConfigured]
   );
 
   // 5. GESTION DES TARIFS & ARTICLES (PARAMÈTRES CRUD)
@@ -579,23 +738,24 @@ export function usePressingStore() {
         articles: updatedArticles,
       };
 
-      offlineQueue.push({
-        id: `act-${Date.now()}`,
-        type: 'UPDATE_ARTICLE',
-        payload: article,
-        timestamp: new Date().toISOString(),
-      });
+      if (isSupabaseConfigured && navigator.onLine) {
+        const supabase = createSupabaseClient() as any;
+        supabase.from('articles').upsert(article).then();
+      } else {
+        offlineQueue.push({
+          id: `act-${Date.now()}`,
+          type: 'UPDATE_ARTICLE',
+          payload: article,
+          timestamp: new Date().toISOString(),
+        });
+      }
 
       persistLocal();
       notifyListeners();
 
-      if (typeof window !== 'undefined' && navigator.onLine) {
-        triggerSync();
-      }
-
       return article;
     },
-    [triggerSync]
+    [isSupabaseConfigured]
   );
 
   const deleteArticle = useCallback((articleId: string) => {
@@ -603,9 +763,13 @@ export function usePressingStore() {
       ...memoryState,
       articles: memoryState.articles.filter((a) => a.id !== articleId),
     };
+    if (isSupabaseConfigured && navigator.onLine) {
+      const supabase = createSupabaseClient() as any;
+      supabase.from('articles').delete().eq('id', articleId).then();
+    }
     persistLocal();
     notifyListeners();
-  }, []);
+  }, [isSupabaseConfigured]);
 
   // 6. GESTION DES PARAMÈTRES GÉNÉRAUX
   const saveSettings = useCallback((newSettings: Partial<Settings>) => {
@@ -618,17 +782,15 @@ export function usePressingStore() {
       },
     };
 
-    offlineQueue.push({
-      id: `act-${Date.now()}`,
-      type: 'SAVE_SETTINGS',
-      payload: memoryState.settings,
-      timestamp: new Date().toISOString(),
-    });
+    if (isSupabaseConfigured && navigator.onLine) {
+      const supabase = createSupabaseClient() as any;
+      supabase.from('settings').upsert(memoryState.settings).then();
+    }
 
     persistLocal();
     notifyListeners();
     return memoryState.settings;
-  }, []);
+  }, [isSupabaseConfigured]);
 
   // 7. RÉINITIALISATION AUX DONNÉES DÉMO
   const resetToDemoData = useCallback(() => {
@@ -646,7 +808,7 @@ export function usePressingStore() {
   }, []);
 
   return {
-    // États réactifs avec useSyncExternalStore
+    // États
     settings: storeState.settings,
     categories: storeState.categories,
     services: storeState.services,
@@ -667,6 +829,7 @@ export function usePressingStore() {
     deleteArticle,
     saveSettings,
     triggerSync,
+    fetchFromSupabase,
     resetToDemoData,
   };
 }
