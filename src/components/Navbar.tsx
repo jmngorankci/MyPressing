@@ -15,13 +15,22 @@ import {
   Clock,
   Layers,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { usePressingStore } from '@/lib/store';
+
+const ShopBrand = dynamic(() => import('@/components/ShopBrand'), {
+  ssr: false,
+  loading: () => (
+    <span className="font-bold text-base sm:text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-blue-200 bg-clip-text text-transparent">
+      Pressing Royal Ivoire
+    </span>
+  ),
+});
 
 export function Navbar() {
   const pathname = usePathname();
   const [isMounted, setIsMounted] = React.useState(false);
   const {
-    settings,
     orders,
     isOnline,
     isSyncing,
@@ -30,14 +39,9 @@ export function Navbar() {
     triggerSync,
   } = usePressingStore();
 
-  const [mountedShopName, setMountedShopName] = React.useState<string | null>(null);
-
   React.useEffect(() => {
     setIsMounted(true);
-    if (settings?.shop_name) {
-      setMountedShopName(settings.shop_name);
-    }
-  }, [settings?.shop_name]);
+  }, []);
 
   // Compter les commandes par statut (sécurisé après montage)
   const activeOrdersCount = isMounted
@@ -90,12 +94,7 @@ export function Navbar() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span
-                  suppressHydrationWarning
-                  className="font-bold text-base sm:text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-blue-200 bg-clip-text text-transparent"
-                >
-                  {mountedShopName || 'Pressing & Blanchisserie Le Majestueux'}
-                </span>
+                <ShopBrand />
                 <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
                   PWA
                 </span>

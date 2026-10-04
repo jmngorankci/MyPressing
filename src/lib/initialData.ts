@@ -2,7 +2,7 @@ import { Category, Article, Service, Client, OrderWithDetails, Settings } from '
 
 export const initialSettings: Settings = {
   id: '74b57589-047d-497a-aacb-eac8868233a9',
-  shop_name: 'Pressing & Blanchisserie Le Majestueux',
+  shop_name: 'Pressing Royal Ivoire',
   phone: '+225 07 89 45 12 30',
   address: 'Bd Latrille, Deux-Plateaux Vallons, Abidjan',
   currency: 'FCFA',

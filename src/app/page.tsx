@@ -374,12 +374,12 @@ export default function ReceptionPage() {
   };
 
   return (
-    <div className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-5 flex flex-col lg:flex-row gap-5">
+    <div className="flex-1 max-w-7xl w-full mx-auto p-2 sm:p-4 lg:p-5 flex flex-col lg:flex-row gap-4 lg:gap-5 overflow-x-hidden">
       
       {/* ========================================================================= */}
       {/* COLONNE GAUCHE : SÉLECTION CLIENT & SÉLECTEUR TACTILE D'ARTICLES */}
       {/* ========================================================================= */}
-      <div className="flex-1 flex flex-col gap-4">
+      <div className="flex-1 min-w-0 flex flex-col gap-4">
         
         {/* BANDEAU CLIENT TACTILE */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm">
@@ -527,7 +527,7 @@ export default function ReceptionPage() {
         </div>
 
         {/* GRILLE TACTILE DES ARTICLES */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
           {filteredArticles.map((article) => {
             const price = calculateItemPrice(article.base_price, 'full', isExpress);
             const inCartQty = cart
@@ -629,8 +629,8 @@ export default function ReceptionPage() {
       {/* ========================================================================= */}
       {/* COLONNE DROITE : TICKET DE COMMANDE & ENCAISSEMENT ACOMPTE */}
       {/* ========================================================================= */}
-      <div id="reception-cart-panel" className="w-full lg:w-[410px] xl:w-[440px] flex flex-col gap-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl p-4 flex flex-col gap-4 sticky top-20">
+      <div id="reception-cart-panel" className="w-full lg:w-[370px] xl:w-[410px] 2xl:w-[430px] shrink-0 flex flex-col gap-4">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl p-3.5 sm:p-4 flex flex-col gap-3 sm:gap-4 sticky top-16 sm:top-20 max-h-[calc(100vh-5rem)] overflow-y-auto">
           
           {/* Header Ticket */}
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -724,7 +724,7 @@ export default function ReceptionPage() {
           </div>
 
           {/* Liste des articles dans le panier */}
-          <div className="flex-1 max-h-[220px] overflow-y-auto space-y-2 pr-1">
+          <div className="flex-1 min-h-[60px] max-h-[160px] xl:max-h-[220px] overflow-y-auto space-y-2 pr-1">
             {cart.length === 0 ? (
               <div className="text-center py-8 text-slate-500 text-xs space-y-2">
                 <ShoppingBag className="w-8 h-8 text-slate-700 mx-auto" />
