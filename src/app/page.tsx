@@ -77,7 +77,7 @@ export default function ReceptionPage() {
   // Formulaire nouvel article catalogue
   const [newArticleData, setNewArticleData] = useState({
     name: '',
-    category_id: categories[0]?.id || 'cat-1',
+    category_id: categories[0]?.id || 'c1111111-1111-1111-1111-111111111111',
     base_price: 1500,
     icon: 'Shirt',
   });
@@ -227,7 +227,7 @@ export default function ReceptionPage() {
 
     const created = saveArticle({
       name: newArticleData.name.trim(),
-      category_id: newArticleData.category_id || categories[0]?.id || 'cat-1',
+      category_id: newArticleData.category_id || categories[0]?.id || 'c1111111-1111-1111-1111-111111111111',
       base_price: Number(newArticleData.base_price),
       icon: newArticleData.icon || 'Shirt',
       is_active: true,
@@ -239,7 +239,7 @@ export default function ReceptionPage() {
     setIsNewArticleModalOpen(false);
     setNewArticleData({
       name: '',
-      category_id: categories[0]?.id || 'cat-1',
+      category_id: categories[0]?.id || 'c1111111-1111-1111-1111-111111111111',
       base_price: 1500,
       icon: 'Shirt',
     });

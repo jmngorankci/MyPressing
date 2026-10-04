@@ -24,9 +24,21 @@ import {
 import { createClient as createSupabaseClient } from './supabase/client';
 
 const STORAGE_KEYS = {
-  STATE: 'mypressing_state_v3',
-  QUEUE: 'mypressing_offline_queue_v3',
+  STATE: 'mypressing_state_v5',
+  QUEUE: 'mypressing_offline_queue_v5',
 };
+
+// Générateur d'UUID compatible v4 pour PostgreSQL / Supabase
+export function generateUuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 interface OfflineAction {
   id: string;
@@ -330,7 +342,9 @@ export function usePressingStore() {
       let updatedClients = memoryState.clients;
       if (!client) {
         client = {
-          id: params.client.id || `cli-${Date.now()}`,
+          id: (params.client.id && params.client.id.length > 25 && !params.client.id.startsWith('cli-'))
+            ? params.client.id
+            : generateUuid(),
           name: params.client.name,
           phone: params.client.phone,
           address: params.client.address || '',
@@ -348,13 +362,15 @@ export function usePressingStore() {
 
       const orderCounter = memoryState.orders.length + 42;
       const orderNumber = `PRS-2026-${String(orderCounter).padStart(4, '0')}`;
-      const orderId = `ord-${Date.now()}`;
+      const orderId = generateUuid();
       const qrCodeValue = `${orderNumber}|${client.phone}|${totalAmount}`;
 
-      const orderItems: OrderItem[] = params.items.map((item, idx) => ({
-        id: `item-${orderId}-${idx + 1}`,
+      const orderItems: OrderItem[] = params.items.map((item) => ({
+        id: generateUuid(),
         order_id: orderId,
-        article_id: item.articleId.startsWith('custom-') ? null : item.articleId,
+        article_id: (item.articleId && item.articleId.length > 25 && !item.articleId.startsWith('custom-') && !item.articleId.startsWith('art-'))
+          ? item.articleId
+          : null,
         article_name: item.articleName,
         service_code: item.serviceCode,
         quantity: item.quantity,
@@ -368,7 +384,7 @@ export function usePressingStore() {
         params.advanceAmount > 0
           ? [
               {
-                id: `pay-${Date.now()}`,
+                id: generateUuid(),
                 order_id: orderId,
                 amount: params.advanceAmount,
                 payment_method: params.paymentMethod,
@@ -678,7 +694,9 @@ export function usePressingStore() {
       } else {
         client = {
           ...clientData,
-          id: clientData.id || `cli-${Date.now()}`,
+          id: (clientData.id && clientData.id.length > 25 && !clientData.id.startsWith('cli-'))
+            ? clientData.id
+            : generateUuid(),
           address: clientData.address || null,
           notes: clientData.notes || null,
           created_at: new Date().toISOString(),
@@ -694,7 +712,15 @@ export function usePressingStore() {
 
       if (isSupabaseConfigured && navigator.onLine) {
         const supabase = createSupabaseClient() as any;
-        supabase.from('clients').upsert(client).then();
+        supabase.from('clients').upsert({
+          id: client.id,
+          name: client.name,
+          phone: client.phone,
+          address: client.address,
+          notes: client.notes,
+        }).then((res: any) => {
+          if (res.error) console.error('[SUPABASE] Erreur client:', res.error);
+        });
       }
 
       persistLocal();
@@ -713,20 +739,28 @@ export function usePressingStore() {
       let article: Article;
       let updatedArticles: Article[];
 
+      const validCategory =
+        articleData.category_id && articleData.category_id.length > 25 && !articleData.category_id.startsWith('cat-')
+          ? articleData.category_id
+          : (memoryState.categories[0]?.id || 'c1111111-1111-1111-1111-111111111111');
+
       if (existingIndex >= 0) {
         article = {
           ...memoryState.articles[existingIndex],
           ...articleData,
+          category_id: validCategory,
           base_price: Number(articleData.base_price),
         };
         updatedArticles = memoryState.articles.map((a, idx) => (idx === existingIndex ? article : a));
       } else {
         article = {
-          id: `art-${Date.now()}`,
-          category_id: articleData.category_id,
+          id: (articleData.id && articleData.id.length > 25 && !articleData.id.startsWith('art-'))
+            ? articleData.id
+            : generateUuid(),
+          category_id: validCategory,
           name: articleData.name.trim(),
           base_price: Number(articleData.base_price),
-          icon: articleData.icon || 'Shirt',
+          icon: articleData.icon || 'shirt',
           is_active: articleData.is_active !== undefined ? articleData.is_active : true,
           created_at: new Date().toISOString(),
         };
@@ -740,7 +774,17 @@ export function usePressingStore() {
 
       if (isSupabaseConfigured && navigator.onLine) {
         const supabase = createSupabaseClient() as any;
-        supabase.from('articles').upsert(article).then();
+        supabase.from('articles').upsert({
+          id: article.id,
+          category_id: article.category_id,
+          name: article.name,
+          base_price: article.base_price,
+          icon: article.icon,
+          is_active: article.is_active,
+        }).then((res: any) => {
+          if (res.error) console.error('[SUPABASE] Erreur ajout article:', res.error);
+          else console.log('[SUPABASE] Article enregistré avec succès:', article.name);
+        });
       } else {
         offlineQueue.push({
           id: `act-${Date.now()}`,

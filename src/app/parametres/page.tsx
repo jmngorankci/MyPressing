@@ -67,7 +67,7 @@ export default function ParametresPage() {
 
   const handleOpenAddArticle = () => {
     setEditingArticle({
-      category_id: categories[0]?.id || 'cat-1',
+      category_id: categories[0]?.id || 'c1111111-1111-1111-1111-111111111111',
       name: '',
       base_price: 1000,
       icon: 'Shirt',
@@ -97,7 +97,7 @@ export default function ParametresPage() {
 
     const saved = saveArticle({
       id: editingArticle.id,
-      category_id: editingArticle.category_id || categories[0]?.id || 'cat-1',
+      category_id: editingArticle.category_id || categories[0]?.id || 'c1111111-1111-1111-1111-111111111111',
       name: editingArticle.name.trim(),
       base_price: price,
       icon: editingArticle.icon || 'Shirt',
