@@ -4,6 +4,7 @@ import './globals.css';
 import { Navbar } from '@/components/Navbar';
 import { NotificationToast } from '@/components/NotificationToast';
 import { ServiceWorkerRegister } from '@/components/ServiceWorkerRegister';
+import { SubscriptionGuard } from '@/components/SubscriptionGuard';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -53,7 +54,9 @@ export default function RootLayout({
       <body suppressHydrationWarning className="min-h-full flex flex-col bg-slate-950 text-slate-100 font-sans">
         <ServiceWorkerRegister />
         <Navbar />
-        <main className="flex-1 flex flex-col">{children}</main>
+        <main className="flex-1 flex flex-col">
+          <SubscriptionGuard>{children}</SubscriptionGuard>
+        </main>
         <NotificationToast />
       </body>
     </html>

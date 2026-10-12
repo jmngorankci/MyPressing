@@ -34,11 +34,17 @@ import {
   QrCode,
   AlertCircle,
   ExternalLink,
+  Coins,
+  Users,
+  CheckCircle2,
+  ArrowRight,
+  Phone,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { usePressingStore } from '@/lib/store';
-import { Article, Category, Settings } from '@/types/database';
+import { Article, Category, Settings, Organization } from '@/types/database';
 import { createClient as createSupabaseClient } from '@/lib/supabase/client';
+import { CreateTenantModal } from '@/components/CreateTenantModal';
 
 const COLOR_PRESETS = [
   { name: 'Bleu Royal (Saphir)', value: '#2563eb' },
@@ -57,6 +63,16 @@ export default function ParametresPage() {
     categories,
     services,
     articles,
+    orders,
+    allOrders,
+    clients,
+    organizations,
+    currentOrganization,
+    currentOrgId,
+    switchTenant,
+    createTenant,
+    deleteTenant,
+    seedTenantCatalog,
     isOnline,
     isSyncing,
     pendingSyncCount,
@@ -67,7 +83,19 @@ export default function ParametresPage() {
     resetToDemoData,
   } = usePressingStore();
 
-  const [activeTab, setActiveTab] = useState<'tarifs' | 'pressing' | 'offline'>('tarifs');
+  const [activeTab, setActiveTab] = useState<'tarifs' | 'pressing' | 'offline' | 'tenants'>('tarifs');
+  const [isTenantModalOpen, setIsTenantModalOpen] = useState(false);
+  const [tenantActionMsg, setTenantActionMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab');
+      if (tabParam === 'tenants' || tabParam === 'pressing' || tabParam === 'offline' || tabParam === 'tarifs') {
+        setActiveTab(tabParam as any);
+      }
+    }
+  }, []);
 
   // Filtre catégorie
   const [filterCat, setFilterCat] = useState<string>('all');
@@ -292,6 +320,17 @@ export default function ParametresPage() {
             }`}
           >
             PWA &amp; Supabase
+          </button>
+          <button
+            onClick={() => setActiveTab('tenants')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+              activeTab === 'tenants'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Building2 className="w-3.5 h-3.5" />
+            <span>Établissements ({organizations.length})</span>
           </button>
         </div>
       </div>
@@ -1024,8 +1063,285 @@ export default function ParametresPage() {
               <span>Réinitialiser aux Données Démo</span>
             </button>
           </div>
+
+          {/* Section Schéma Cloud Multi-Tenant Supabase */}
+          <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-750 space-y-3 mt-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-white font-semibold text-xs">
+                <Database className="w-4 h-4 text-blue-400" />
+                <span>Schéma Cloud Supabase &amp; Multi-Tenant</span>
+              </div>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                Mode adaptatif actif (Tolérance zéro crash)
+              </span>
+            </div>
+            <p className="text-xs text-slate-400">
+              L&apos;application gère automatiquement l&apos;isolation multi-tenant locale et distante. Si votre table Supabase distante n&apos;a pas encore reçu la migration SQL (colonnes <code className="text-slate-300">organization_id</code>), l&apos;application effectue un repli automatique sans aucune erreur.
+            </p>
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <a
+                href="https://supabase.com/dashboard/project/fpwzdwgjmigdniyzydnw/sql/new"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 text-xs font-semibold border border-blue-500/30 transition-all"
+              >
+                <span>Ouvrir l&apos;Éditeur SQL Supabase</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+              <span className="text-[11px] text-slate-400">
+                Script prêt à coller : <code className="text-slate-300">supabase/migrations/run_this_in_supabase_sql_editor.sql</code>
+              </span>
+            </div>
+          </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* ONGLET 4 : GESTION MULTI-TENANT & BLANCHISSERIES B2B */}
+      {/* ========================================================================= */}
+      {activeTab === 'tenants' && (
+        <div className="space-y-6 animate-in fade-in">
+          
+          {tenantActionMsg && (
+            <div className="p-3.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{tenantActionMsg}</span>
+              </div>
+              <button onClick={() => setTenantActionMsg(null)} className="text-emerald-400 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* Bannière principale Multi-Tenant */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-blue-600/20 text-blue-400 flex items-center justify-center shrink-0 border border-blue-500/30">
+                <Building2 className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-bold text-white">
+                    Plateforme Multi-Tenant &amp; Blanchisseries
+                  </h2>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                    SaaS B2B
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
+                  Chaque blanchisserie cliente ou filiale dispose de son propre tenant avec isolation stricte des données : catalogue de tarifs sur-mesure, clients, commandes guichet, tickets thermiques et suivi QR Code.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsTenantModalOpen(true)}
+              className="flex items-center gap-2 px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-lg shadow-blue-600/30 transition-all self-start md:self-auto shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Créer un nouveau Pressing</span>
+            </button>
+          </div>
+
+          {/* Grille des Blanchisseries enregistrées */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {organizations.map((org) => {
+              const isActive = org.id === currentOrgId;
+              const orgColor = org.primary_color || '#2563eb';
+              const orgOrdersCount = (allOrders || []).filter(
+                (o) => (o.organization_id || '00000000-0000-0000-0000-000000000001') === org.id
+              ).length;
+              const orgClientsCount = (clients || []).filter(
+                (c) => (c.organization_id || '00000000-0000-0000-0000-000000000001') === org.id
+              ).length;
+
+              return (
+                <div
+                  key={org.id}
+                  className={`bg-slate-900 rounded-2xl border transition-all overflow-hidden flex flex-col justify-between shadow-md ${
+                    isActive
+                      ? 'border-blue-500 ring-1 ring-blue-500/50 shadow-blue-900/20'
+                      : 'border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  {/* Bande de couleur thématique */}
+                  <div className="h-2 w-full" style={{ backgroundColor: orgColor }} />
+
+                  <div className="p-5 space-y-4">
+                    {/* Entête Carte */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="w-3 h-3 rounded-full shrink-0 shadow-sm"
+                            style={{ backgroundColor: orgColor }}
+                          />
+                          <h3 className="font-bold text-white text-base leading-snug">
+                            {org.name}
+                          </h3>
+                        </div>
+                        <p className="text-[11px] font-mono text-slate-500 mt-0.5">
+                          slug: {org.slug}
+                        </p>
+                      </div>
+
+                      {isActive ? (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shrink-0 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          Actif
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 shrink-0">
+                          Inactif
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Informations Coordonnées */}
+                    <div className="space-y-1.5 text-xs text-slate-400 bg-slate-950/40 p-3 rounded-xl border border-slate-800/80">
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-1.5 text-slate-400">
+                          <Coins className="w-3.5 h-3.5 text-amber-400" />
+                          Devise
+                        </span>
+                        <span className="font-bold text-slate-200">{org.currency}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-1.5 text-slate-400">
+                          <Phone className="w-3.5 h-3.5 text-emerald-400" />
+                          Téléphone
+                        </span>
+                        <span className="text-slate-200 truncate max-w-[150px]">{org.phone}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-1.5 text-slate-400">
+                          <MapPin className="w-3.5 h-3.5 text-rose-400" />
+                          Adresse
+                        </span>
+                        <span className="text-slate-200 truncate max-w-[150px]">{org.address}</span>
+                      </div>
+                    </div>
+
+                    {/* Compteurs Activité */}
+                    <div className="grid grid-cols-2 gap-2 text-center">
+                      <div className="bg-slate-800/60 p-2.5 rounded-xl border border-slate-800">
+                        <div className="text-xs text-slate-400">Commandes</div>
+                        <div className="text-sm font-bold text-white mt-0.5">{orgOrdersCount}</div>
+                      </div>
+                      <div className="bg-slate-800/60 p-2.5 rounded-xl border border-slate-800">
+                        <div className="text-xs text-slate-400">Clients</div>
+                        <div className="text-sm font-bold text-white mt-0.5">{orgClientsCount}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions du bas de carte */}
+                  <div className="p-4 bg-slate-950/60 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                    {isActive ? (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('pressing')}
+                        className="flex-1 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <SettingsIcon className="w-3.5 h-3.5 text-blue-400" />
+                        <span>Paramètres de ce Pressing</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          switchTenant(org.id);
+                          setTenantActionMsg(`Bascule réussie vers "${org.name}" !`);
+                          setTimeout(() => setTenantActionMsg(null), 3000);
+                        }}
+                        className="flex-1 py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white transition-all flex items-center justify-center gap-1.5 shadow-md shadow-blue-600/20"
+                      >
+                        <ArrowRight className="w-3.5 h-3.5" />
+                        <span>Basculer sur ce Pressing</span>
+                      </button>
+                    )}
+
+                    {org.id !== '00000000-0000-0000-0000-000000000001' && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (confirm(`Confirmez-vous la suppression du tenant "${org.name}" ?`)) {
+                            const res = await deleteTenant(org.id);
+                            if (res.success) {
+                              setTenantActionMsg(`Tenant "${org.name}" supprimé.`);
+                              setTimeout(() => setTenantActionMsg(null), 3000);
+                            } else {
+                              alert(res.message);
+                            }
+                          }
+                        }}
+                        title="Supprimer ce tenant"
+                        className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Présentation Technique Architecture Multi-Tenant */}
+          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 space-y-4">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              Garanties Techniques de l&apos;Architecture Multi-Tenant B2B
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-400">
+              <div className="p-4 rounded-xl bg-slate-800/40 border border-slate-700/60 space-y-1.5">
+                <div className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <Database className="w-4 h-4 text-blue-400" />
+                  Isolation PostgreSQL RLS
+                </div>
+                <p>
+                  Chaque requête Supabase est bornée par Row-Level Security et <code className="text-blue-300 font-mono text-[11px]">get_user_org_id()</code>. Aucun risque de fuite de données entre concurrents.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-800/40 border border-slate-700/60 space-y-1.5">
+                <div className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <Palette className="w-4 h-4 text-violet-400" />
+                  Whitelabel &amp; Devises
+                </div>
+                <p>
+                  Chaque blanchisserie personnalise ses couleurs, son logo, son en-tête de ticket 80mm et sa devise monétaire (FCFA, EUR, GNF, MAD, USD).
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-800/40 border border-slate-700/60 space-y-1.5">
+                <div className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <Wifi className="w-4 h-4 text-emerald-400" />
+                  Résilience Hors-Ligne Hybride
+                </div>
+                <p>
+                  Même en cas de coupure de connexion internet dans la boutique, les dépôts et paiements s&apos;enregistrent en local et se répliquent automatiquement dès le retour du réseau.
+                </p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* MODAL CRÉATION DE TENANT MULTI-TENANT */}
+      <CreateTenantModal
+        isOpen={isTenantModalOpen}
+        onClose={() => setIsTenantModalOpen(false)}
+        onSuccess={(orgName) => {
+          setTenantActionMsg(`Pressing "${orgName}" créé avec succès ! Le catalogue standard a été généré.`);
+          setTimeout(() => setTenantActionMsg(null), 4000);
+        }}
+      />
 
       {/* MODAL AJOUT / ÉDITION ARTICLE */}
       {isArticleModalOpen && editingArticle && (

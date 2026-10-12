@@ -14,9 +14,11 @@ import {
   RefreshCw,
   Clock,
   Layers,
+  ShieldCheck,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { usePressingStore } from '@/lib/store';
+import { TenantSwitcher } from '@/components/TenantSwitcher';
 
 const ShopBrand = dynamic(() => import('@/components/ShopBrand'), {
   ssr: false,
@@ -33,6 +35,7 @@ export function Navbar() {
   const {
     orders,
     settings,
+    currentUser,
     isOnline,
     isSyncing,
     pendingSyncCount,
@@ -82,6 +85,13 @@ export function Navbar() {
       label: 'Paramètres Blanchisserie',
       icon: Settings,
       badge: null,
+    },
+    {
+      href: '/admin',
+      label: 'Super Admin SaaS',
+      icon: ShieldCheck,
+      badge: 'SaaS',
+      badgeColor: 'bg-indigo-600',
     },
   ];
 
@@ -166,8 +176,10 @@ export function Navbar() {
             })}
           </nav>
 
-          {/* Online/Offline Status & Sync Button */}
+          {/* Tenant Switcher & Sync Status */}
           <div className="flex items-center gap-2">
+            {isMounted && <TenantSwitcher />}
+
             <button
               onClick={() => triggerSync()}
               disabled={isSyncing}
@@ -213,6 +225,35 @@ export function Navbar() {
                 }`}
               />
             </button>
+
+            {/* Profil Utilisateur / Connexion (/login) */}
+            {isMounted && (
+              <Link
+                href="/login"
+                title={
+                  currentUser?.isLoggedIn
+                    ? `Session active : ${currentUser.name} (${currentUser.role})`
+                    : 'Accéder au portail de connexion / inscription'
+                }
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 hover:border-slate-600 text-xs font-medium text-slate-200 hover:text-white transition-all shadow-sm"
+              >
+                <div className="w-5 h-5 rounded-lg bg-blue-500/20 text-blue-300 border border-blue-500/40 flex items-center justify-center text-[10px] font-bold shrink-0">
+                  {currentUser?.isLoggedIn && currentUser?.name
+                    ? currentUser.name.slice(0, 1).toUpperCase()
+                    : '👤'}
+                </div>
+                <span className="hidden xl:inline truncate max-w-[90px] text-xs">
+                  {currentUser?.isLoggedIn ? currentUser.name : 'Connexion'}
+                </span>
+                <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-slate-900/90 text-blue-300 border border-slate-700/80 hidden sm:inline">
+                  {currentUser?.role === 'super_admin'
+                    ? 'Admin'
+                    : currentUser?.role === 'owner'
+                    ? 'Gérant'
+                    : currentUser?.role || 'Guest'}
+                </span>
+              </Link>
+            )}
           </div>
 
         </div>

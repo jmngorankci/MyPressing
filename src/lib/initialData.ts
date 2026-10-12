@@ -14,9 +14,78 @@ export const initialOrganization: Organization = {
   ticket_header: '*** PRESSING & BLANCHISSERIE HAUT DE GAMME ***',
   ticket_footer: 'Merci pour votre confiance ! Tout vêtement non réclamé sous 90 jours sera cédé.',
   currency: 'FCFA',
+  is_active: true,
+  subscription_status: 'active',
+  subscription_plan: 'pro',
+  subscription_expires_at: new Date(Date.now() + 28 * 24 * 60 * 60 * 1000).toISOString(),
+  monthly_fee: 25000,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
 };
+
+export const demoOrganizations: Organization[] = [
+  initialOrganization,
+  {
+    id: '00000000-0000-0000-0000-000000000002',
+    name: 'Pressing Élite Plateau',
+    slug: 'pressing-elite-plateau',
+    logo_url: null,
+    primary_color: '#059669',
+    phone: '+225 05 12 34 56 78',
+    email: 'direction@elite-pressing.ci',
+    address: 'Avenue Chardy, Immeuble Alpha, Plateau, Abidjan',
+    ticket_header: '*** PRESSING ÉLITE - SERVICE RAPIDE ***',
+    ticket_footer: 'Vêtements garantis sous soin expert. Retrait sous 60 jours.',
+    currency: 'FCFA',
+    is_active: true,
+    subscription_status: 'active',
+    subscription_plan: 'enterprise',
+    subscription_expires_at: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString(),
+    monthly_fee: 50000,
+    created_at: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: '00000000-0000-0000-0000-000000000003',
+    name: 'Lavoir Express Cocody',
+    slug: 'lavoir-express-cocody',
+    logo_url: null,
+    primary_color: '#d97706',
+    phone: '+225 07 44 55 66 77',
+    email: 'contact@lavoirexpress.ci',
+    address: 'Angré 8ème Tranche, Carrefour Duncan, Abidjan',
+    ticket_header: '*** LAVOIR EXPRESS COCODY ***',
+    ticket_footer: 'Ticket obligatoire au retrait.',
+    currency: 'FCFA',
+    is_active: true,
+    subscription_status: 'past_due',
+    subscription_plan: 'starter',
+    subscription_expires_at: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+    monthly_fee: 15000,
+    created_at: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: '00000000-0000-0000-0000-000000000004',
+    name: 'AquaNet Yopougon',
+    slug: 'aquanet-yopougon',
+    logo_url: null,
+    primary_color: '#e11d48',
+    phone: '+225 01 22 33 44 55',
+    email: 'gerance@aquanet-pressing.ci',
+    address: 'Yopougon Maroc, Face Pharmacie du Soleil, Abidjan',
+    ticket_header: '*** AQUANET PRESSING & TEINTURERIE ***',
+    ticket_footer: 'La direction décline toute responsabilité pour les boutons et ornements.',
+    currency: 'FCFA',
+    is_active: false,
+    subscription_status: 'suspended',
+    subscription_plan: 'starter',
+    subscription_expires_at: new Date(Date.now() - 18 * 24 * 60 * 60 * 1000).toISOString(),
+    monthly_fee: 15000,
+    created_at: new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+];
 
 export const initialSettings: Settings = {
   id: '74b57589-047d-497a-aacb-eac8868233a9',
@@ -301,3 +370,80 @@ export const initialOrders: OrderWithDetails[] = [
     payments: [],
   },
 ];
+
+// Générateur d'identifiant UUID v4 pour initialData
+function generateSeedUuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+/**
+ * Génère automatiquement le catalogue de démarrage complet pour un nouveau tenant (blanchisserie)
+ */
+export function createDefaultCatalogForOrg(
+  orgId: string,
+  orgName: string,
+  currency: string = 'FCFA'
+) {
+  // Mapping des identifiants des catégories sources vers les nouveaux UUIDs
+  const catMap: Record<string, string> = {
+    'c1111111-1111-1111-1111-111111111111': generateSeedUuid(),
+    'c2222222-2222-2222-2222-222222222222': generateSeedUuid(),
+    'c3333333-3333-3333-3333-333333333333': generateSeedUuid(),
+    'c4444444-4444-4444-4444-444444444444': generateSeedUuid(),
+    'c5555555-5555-5555-5555-555555555555': generateSeedUuid(),
+    'c6666666-6666-6666-6666-666666666666': generateSeedUuid(),
+  };
+
+  const categories: Category[] = initialCategories.map((c) => ({
+    ...c,
+    id: catMap[c.id] || generateSeedUuid(),
+    organization_id: orgId,
+    created_at: new Date().toISOString(),
+  }));
+
+  const services: Service[] = initialServices.map((s) => ({
+    ...s,
+    id: generateSeedUuid(),
+    organization_id: orgId,
+    created_at: new Date().toISOString(),
+  }));
+
+  const articles: Article[] = initialArticles.map((a) => ({
+    ...a,
+    id: generateSeedUuid(),
+    organization_id: orgId,
+    category_id: catMap[a.category_id] || categories[0].id,
+    created_at: new Date().toISOString(),
+  }));
+
+  const settings: Settings = {
+    id: generateSeedUuid(),
+    organization_id: orgId,
+    shop_name: orgName,
+    phone: '+225 00 00 00 00 00',
+    email: null,
+    address: 'Abidjan',
+    currency,
+    logo_url: null,
+    primary_color: '#2563eb',
+    ticket_header: `*** ${orgName.toUpperCase()} ***`,
+    ticket_footer: 'Merci pour votre confiance ! Tout vêtement non réclamé sous 90 jours sera cédé.',
+    default_pickup_days: 2,
+    express_surcharge_percent: 50,
+    sms_api_key: null,
+    whatsapp_api_url: null,
+    whatsapp_template: `Bonjour {{client_name}}, vos vêtements déposés sous le ticket #{{order_number}} sont PRÊTS au pressing ${orgName}. Reste à payer : {{remaining_amount}} {{currency}}. Merci de votre confiance !`,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  return { categories, services, articles, settings };
+}
+

@@ -8,7 +8,10 @@ import {
   initialArticles,
   initialClients,
   initialOrders,
+  initialOrganization,
+  demoOrganizations,
   DEFAULT_ORG_ID,
+  createDefaultCatalogForOrg,
 } from './initialData';
 import {
   Client,
@@ -17,10 +20,14 @@ import {
   Service,
   OrderWithDetails,
   Settings,
+  Organization,
   OrderStatus,
   PaymentMethod,
   OrderItem,
   Payment,
+  MemberRole,
+  SubscriptionStatus,
+  SubscriptionPlan,
 } from '@/types/database';
 import { createClient as createSupabaseClient } from './supabase/client';
 
@@ -28,6 +35,10 @@ const STORAGE_KEYS = {
   STATE: 'mypressing_state_v6',
   QUEUE: 'mypressing_offline_queue_v6',
   PREV_STATE: 'mypressing_state_v5',
+  ORGS: 'mypressing_organizations_v6',
+  ACTIVE_ORG: 'mypressing_active_org_v6',
+  ALL_SETTINGS: 'mypressing_all_settings_v6',
+  CURRENT_USER: 'mypressing_current_user_v6',
 };
 
 // Générateur d'UUID compatible v4 pour PostgreSQL / Supabase
@@ -42,6 +53,42 @@ export function generateUuid(): string {
   });
 }
 
+// Utilitaire d'upsert tolérant aux schémas distants (bascule automatique en mode legacy si une colonne n'existe pas encore)
+async function safeSupabaseUpsert(
+  supabase: any,
+  table: string,
+  fullPayload: any,
+  fallbackPayload?: any
+) {
+  try {
+    const res = await supabase.from(table).upsert(fullPayload);
+    if (res.error) {
+      const isColumnOrSchemaError =
+        res.error.code === 'PGRST204' ||
+        res.error.code === '42703' ||
+        res.error.code === 'PGRST205' ||
+        res.error.message?.includes('schema cache') ||
+        res.error.message?.includes('column');
+
+      if (isColumnOrSchemaError && fallbackPayload) {
+        const fallbackRes = await supabase.from(table).upsert(fallbackPayload);
+        if (fallbackRes.error) {
+          console.warn(`[SUPABASE] Synchro ${table} (mode legacy):`, fallbackRes.error.message || fallbackRes.error);
+          return fallbackRes;
+        }
+        return fallbackRes;
+      }
+
+      console.warn(`[SUPABASE] Synchro ${table}:`, res.error.message || res.error);
+      return res;
+    }
+    return res;
+  } catch (err: any) {
+    console.warn(`[SUPABASE] Exception ${table}:`, err?.message || err);
+    return { error: err };
+  }
+}
+
 interface OfflineAction {
   id: string;
   type: 'CREATE_ORDER' | 'UPDATE_STATUS' | 'RECORD_PAYMENT' | 'SAVE_CLIENT' | 'UPDATE_ARTICLE' | 'SAVE_SETTINGS';
@@ -49,32 +96,62 @@ interface OfflineAction {
   timestamp: string;
 }
 
+export interface UserSession {
+  id: string;
+  name: string;
+  email: string;
+  role: MemberRole;
+  organization_id?: string;
+  isLoggedIn?: boolean;
+}
+
+export const defaultCurrentUser: UserSession = {
+  id: 'usr-admin-01',
+  name: 'Super Admin MyPressing',
+  email: 'admin@mypressing.ci',
+  role: 'super_admin',
+  organization_id: DEFAULT_ORG_ID,
+  isLoggedIn: true,
+};
+
 export interface PressingState {
+  organizations: Organization[];
+  currentOrgId: string;
+  allSettings: Record<string, Settings>;
   settings: Settings;
   categories: Category[];
   services: Service[];
   articles: Article[];
   clients: Client[];
   orders: OrderWithDetails[];
+  currentUser: UserSession;
 }
 
 const initialServerState: PressingState = {
+  organizations: demoOrganizations,
+  currentOrgId: DEFAULT_ORG_ID,
+  allSettings: { [DEFAULT_ORG_ID]: initialSettings },
   settings: initialSettings,
   categories: initialCategories,
   services: initialServices,
   articles: initialArticles,
   clients: initialClients,
   orders: initialOrders,
+  currentUser: defaultCurrentUser,
 };
 
 // Singleton state en mémoire
 let memoryState: PressingState = {
+  organizations: demoOrganizations,
+  currentOrgId: DEFAULT_ORG_ID,
+  allSettings: { [DEFAULT_ORG_ID]: initialSettings },
   settings: initialSettings,
   categories: initialCategories,
   services: initialServices,
   articles: initialArticles,
   clients: initialClients,
   orders: initialOrders,
+  currentUser: defaultCurrentUser,
 };
 
 let offlineQueue: OfflineAction[] = [];
@@ -111,36 +188,138 @@ function persistLocal() {
   try {
     localStorage.setItem(STORAGE_KEYS.STATE, JSON.stringify(memoryState));
     localStorage.setItem(STORAGE_KEYS.QUEUE, JSON.stringify(offlineQueue));
+    localStorage.setItem(STORAGE_KEYS.ORGS, JSON.stringify(memoryState.organizations));
+    localStorage.setItem(STORAGE_KEYS.ACTIVE_ORG, memoryState.currentOrgId);
+    localStorage.setItem(STORAGE_KEYS.ALL_SETTINGS, JSON.stringify(memoryState.allSettings));
+    localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(memoryState.currentUser));
   } catch (err) {
     console.warn('LocalStorage error:', err);
   }
 }
 
-// Chargement initial depuis localStorage
+// Chargement initial depuis localStorage avec support multi-tenant
 function loadLocal() {
   if (typeof window === 'undefined') return;
   try {
+    // 1. Charger les organisations enregistrées
+    let loadedOrgs: Organization[] = demoOrganizations;
+    const rawOrgs = localStorage.getItem(STORAGE_KEYS.ORGS);
+    if (rawOrgs) {
+      try {
+        const parsedOrgs = JSON.parse(rawOrgs);
+        if (Array.isArray(parsedOrgs) && parsedOrgs.length > 0) {
+          loadedOrgs = parsedOrgs.map((org: any) => ({
+            ...org,
+            is_active: org.is_active !== undefined ? org.is_active : true,
+            subscription_status: org.subscription_status || 'active',
+            subscription_plan: org.subscription_plan || 'pro',
+            subscription_expires_at:
+              org.subscription_expires_at ||
+              new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            monthly_fee: org.monthly_fee || 25000,
+          }));
+        }
+      } catch (e) {}
+    }
+
+    // 2. Charger l'utilisateur courant / rôle
+    let loadedCurrentUser = defaultCurrentUser;
+    const rawUser = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+    if (rawUser) {
+      try {
+        loadedCurrentUser = { ...defaultCurrentUser, ...JSON.parse(rawUser) };
+      } catch (e) {}
+    }
+
+    // 3. Charger le tenant actif
+    let activeOrgId = localStorage.getItem(STORAGE_KEYS.ACTIVE_ORG) || DEFAULT_ORG_ID;
+    if (!loadedOrgs.some((o) => o.id === activeOrgId)) {
+      activeOrgId = loadedOrgs[0].id;
+    }
+
+    // 4. Charger le dictionnaire des settings
+    let loadedAllSettings: Record<string, Settings> = { [DEFAULT_ORG_ID]: initialSettings };
+    const rawAllSettings = localStorage.getItem(STORAGE_KEYS.ALL_SETTINGS);
+    if (rawAllSettings) {
+      try {
+        loadedAllSettings = { ...loadedAllSettings, ...JSON.parse(rawAllSettings) };
+      } catch (e) {}
+    }
+
+    // 5. Charger le state persistant
     const rawState = localStorage.getItem(STORAGE_KEYS.STATE) || localStorage.getItem(STORAGE_KEYS.PREV_STATE);
+    let loadedCategories = initialCategories;
+    let loadedServices = initialServices;
+    let loadedArticles = initialArticles;
+    let loadedClients = initialClients;
+    let loadedOrders = initialOrders;
+
     if (rawState) {
       const parsed = JSON.parse(rawState);
-      const mergedSettings: Settings = {
-        ...initialSettings,
-        ...(parsed.settings || {}),
-        organization_id: parsed.settings?.organization_id || initialSettings.organization_id || DEFAULT_ORG_ID,
-        primary_color: parsed.settings?.primary_color || initialSettings.primary_color || '#2563eb',
-        ticket_header: parsed.settings?.ticket_header || initialSettings.ticket_header,
-        ticket_footer: parsed.settings?.ticket_footer || initialSettings.ticket_footer,
-      };
-
-      memoryState = {
-        settings: mergedSettings,
-        categories: parsed.categories?.length ? parsed.categories : initialCategories,
-        services: parsed.services?.length ? parsed.services : initialServices,
-        articles: parsed.articles?.length ? parsed.articles : initialArticles,
-        clients: parsed.clients?.length ? parsed.clients : initialClients,
-        orders: parsed.orders?.length ? parsed.orders : initialOrders,
-      };
+      if (parsed.settings) {
+        const parsedOrgId = parsed.settings.organization_id || DEFAULT_ORG_ID;
+        loadedAllSettings[parsedOrgId] = {
+          ...initialSettings,
+          ...parsed.settings,
+          organization_id: parsedOrgId,
+        };
+      }
+      if (parsed.allSettings) {
+        loadedAllSettings = { ...loadedAllSettings, ...parsed.allSettings };
+      }
+      if (parsed.categories?.length) loadedCategories = parsed.categories;
+      if (parsed.services?.length) loadedServices = parsed.services;
+      if (parsed.articles?.length) loadedArticles = parsed.articles;
+      if (parsed.clients?.length) loadedClients = parsed.clients;
+      if (parsed.orders?.length) loadedOrders = parsed.orders;
+      if (parsed.organizations?.length) {
+        loadedOrgs = parsed.organizations.map((org: any) => ({
+          ...org,
+          is_active: org.is_active !== undefined ? org.is_active : true,
+          subscription_status: org.subscription_status || 'active',
+          subscription_plan: org.subscription_plan || 'pro',
+          subscription_expires_at:
+            org.subscription_expires_at ||
+            new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          monthly_fee: org.monthly_fee || 25000,
+        }));
+      }
+      if (parsed.currentOrgId && loadedOrgs.some((o) => o.id === parsed.currentOrgId)) {
+        activeOrgId = parsed.currentOrgId;
+      }
+      if (parsed.currentUser) {
+        loadedCurrentUser = parsed.currentUser;
+      }
     }
+
+    const currentOrg = loadedOrgs.find((o) => o.id === activeOrgId) || loadedOrgs[0] || initialOrganization;
+    const currentSettings = loadedAllSettings[activeOrgId] || {
+      ...initialSettings,
+      id: generateUuid(),
+      organization_id: activeOrgId,
+      shop_name: currentOrg.name,
+      currency: currentOrg.currency,
+      primary_color: currentOrg.primary_color,
+      phone: currentOrg.phone,
+      address: currentOrg.address,
+      ticket_header: currentOrg.ticket_header,
+      ticket_footer: currentOrg.ticket_footer,
+    };
+    loadedAllSettings[activeOrgId] = currentSettings;
+
+    memoryState = {
+      organizations: loadedOrgs,
+      currentOrgId: activeOrgId,
+      allSettings: loadedAllSettings,
+      settings: currentSettings,
+      categories: loadedCategories,
+      services: loadedServices,
+      articles: loadedArticles,
+      clients: loadedClients,
+      orders: loadedOrders,
+      currentUser: loadedCurrentUser,
+    };
+
     const rawQueue = localStorage.getItem(STORAGE_KEYS.QUEUE);
     if (rawQueue) {
       offlineQueue = JSON.parse(rawQueue);
@@ -185,6 +364,7 @@ export function usePressingStore() {
       const supabase = createSupabaseClient() as any;
 
       const [
+        { data: sbOrgs },
         { data: sbSettings },
         { data: sbCategories },
         { data: sbServices },
@@ -192,7 +372,8 @@ export function usePressingStore() {
         { data: sbClients },
         { data: sbOrders },
       ] = await Promise.all([
-        supabase.from('settings').select('*').limit(1).maybeSingle(),
+        supabase.from('organizations').select('*').order('created_at', { ascending: true }),
+        supabase.from('settings').select('*'),
         supabase.from('categories').select('*').order('display_order', { ascending: true }),
         supabase.from('services').select('*'),
         supabase.from('articles').select('*').order('created_at', { ascending: true }),
@@ -208,8 +389,25 @@ export function usePressingStore() {
       let hasChanges = false;
       const newState = { ...memoryState };
 
-      if (sbSettings) {
-        newState.settings = sbSettings;
+      if (sbOrgs && sbOrgs.length > 0) {
+        const mergedOrgsMap = new Map<string, Organization>();
+        [...memoryState.organizations, ...sbOrgs].forEach((o: Organization) => mergedOrgsMap.set(o.id, o));
+        newState.organizations = Array.from(mergedOrgsMap.values());
+        hasChanges = true;
+      }
+
+      if (sbSettings && sbSettings.length > 0) {
+        sbSettings.forEach((s: Settings) => {
+          if (s.organization_id) {
+            newState.allSettings[s.organization_id] = s;
+          }
+        });
+        if (newState.allSettings[newState.currentOrgId]) {
+          newState.settings = newState.allSettings[newState.currentOrgId];
+        }
+        hasChanges = true;
+      } else if (sbSettings && !Array.isArray(sbSettings)) {
+        newState.settings = sbSettings as Settings;
         hasChanges = true;
       }
       if (sbCategories && sbCategories.length > 0) {
@@ -256,9 +454,14 @@ export function usePressingStore() {
         for (const action of [...offlineQueue]) {
           if (action.type === 'CREATE_ORDER') {
             const { order, client, items } = action.payload;
-            await supabase.from('clients').upsert(client);
-            await supabase.from('orders').upsert({
+            if (client) {
+              const fullClient = { ...client };
+              const { organization_id: _cOrg, ...legacyClient } = client;
+              await safeSupabaseUpsert(supabase, 'clients', fullClient, legacyClient);
+            }
+            const fullOrder = {
               id: order.id,
+              organization_id: order.organization_id,
               order_number: order.order_number,
               client_id: order.client_id,
               status: order.status,
@@ -272,9 +475,16 @@ export function usePressingStore() {
               notes: order.notes,
               qr_code: order.qr_code,
               notification_sent: order.notification_sent,
-            });
+            };
+            const { organization_id: _oOrg, ...legacyOrder } = fullOrder;
+            await safeSupabaseUpsert(supabase, 'orders', fullOrder, legacyOrder);
+
             if (items && items.length) {
-              await supabase.from('order_items').upsert(items);
+              for (const item of items) {
+                const fullItem = { ...item };
+                const { organization_id: _iOrg, ...legacyItem } = item;
+                await safeSupabaseUpsert(supabase, 'order_items', fullItem, legacyItem);
+              }
             }
           } else if (action.type === 'UPDATE_STATUS') {
             await supabase
@@ -293,7 +503,9 @@ export function usePressingStore() {
               })
               .eq('id', action.payload.orderId);
           } else if (action.type === 'UPDATE_ARTICLE') {
-            await supabase.from('articles').upsert(action.payload);
+            const fullArt = { ...action.payload };
+            const { organization_id: _aOrg, ...legacyArt } = action.payload;
+            await safeSupabaseUpsert(supabase, 'articles', fullArt, legacyArt);
           }
         }
         offlineQueue = [];
@@ -357,10 +569,11 @@ export function usePressingStore() {
       isExpress: boolean;
       notes?: string;
     }) => {
-      const currentOrgId = memoryState.settings.organization_id || DEFAULT_ORG_ID;
+      const currentOrgId = memoryState.currentOrgId || memoryState.settings.organization_id || DEFAULT_ORG_ID;
 
       let client = memoryState.clients.find(
-        (c) => c.phone.trim().replace(/\s+/g, '') === params.client.phone.trim().replace(/\s+/g, '')
+        (c) => (c.organization_id || DEFAULT_ORG_ID) === currentOrgId &&
+               c.phone.trim().replace(/\s+/g, '') === params.client.phone.trim().replace(/\s+/g, '')
       );
 
       let updatedClients = memoryState.clients;
@@ -387,7 +600,10 @@ export function usePressingStore() {
       const paymentStatus =
         remainingAmount === 0 ? 'paid' : params.advanceAmount > 0 ? 'partially_paid' : 'unpaid';
 
-      const orderCounter = memoryState.orders.length + 42;
+      const currentOrgOrders = memoryState.orders.filter(
+        (o) => (o.organization_id || DEFAULT_ORG_ID) === currentOrgId
+      );
+      const orderCounter = currentOrgOrders.length + 1;
       const orderNumber = `PRS-2026-${String(orderCounter).padStart(4, '0')}`;
       const orderId = generateUuid();
       const qrCodeValue = `${orderNumber}|${activeClient.phone}|${totalAmount}`;
@@ -718,7 +934,7 @@ export function usePressingStore() {
   const saveClient = useCallback(
     (clientData: Omit<Client, 'id' | 'created_at' | 'updated_at' | 'organization_id'> & { id?: string; organization_id?: string }) => {
       const existingIndex = memoryState.clients.findIndex((c) => c.id === clientData.id);
-      const currentOrgId = memoryState.settings.organization_id || DEFAULT_ORG_ID;
+      const currentOrgId = memoryState.currentOrgId || memoryState.settings.organization_id || DEFAULT_ORG_ID;
       let client: Client;
       let updatedClients: Client[];
 
@@ -752,16 +968,23 @@ export function usePressingStore() {
 
       if (isSupabaseConfigured && navigator.onLine) {
         const supabase = createSupabaseClient() as any;
-        supabase.from('clients').upsert({
+        const fullPayload = {
           id: client.id,
           organization_id: client.organization_id,
           name: client.name,
           phone: client.phone,
           address: client.address,
           notes: client.notes,
-        }).then((res: any) => {
-          if (res.error) console.error('[SUPABASE] Erreur client:', res.error);
-        });
+        };
+        const legacyPayload = {
+          id: client.id,
+          name: client.name,
+          phone: client.phone,
+          address: client.address,
+          notes: client.notes,
+        };
+
+        safeSupabaseUpsert(supabase, 'clients', fullPayload, legacyPayload);
       }
 
       persistLocal();
@@ -777,14 +1000,16 @@ export function usePressingStore() {
       const existingIndex = articleData.id
         ? memoryState.articles.findIndex((a) => a.id === articleData.id)
         : -1;
-      const currentOrgId = memoryState.settings.organization_id || DEFAULT_ORG_ID;
+      const currentOrgId = memoryState.currentOrgId || memoryState.settings.organization_id || DEFAULT_ORG_ID;
       let article: Article;
       let updatedArticles: Article[];
 
       const validCategory =
         articleData.category_id && articleData.category_id.length > 25 && !articleData.category_id.startsWith('cat-')
           ? articleData.category_id
-          : (memoryState.categories[0]?.id || 'c1111111-1111-1111-1111-111111111111');
+          : (memoryState.categories.find((c) => (c.organization_id || DEFAULT_ORG_ID) === currentOrgId)?.id ||
+             memoryState.categories[0]?.id ||
+             'c1111111-1111-1111-1111-111111111111');
 
       if (existingIndex >= 0) {
         article = {
@@ -818,7 +1043,7 @@ export function usePressingStore() {
 
       if (isSupabaseConfigured && navigator.onLine) {
         const supabase = createSupabaseClient() as any;
-        supabase.from('articles').upsert({
+        const fullPayload = {
           id: article.id,
           organization_id: article.organization_id,
           category_id: article.category_id,
@@ -826,10 +1051,17 @@ export function usePressingStore() {
           base_price: article.base_price,
           icon: article.icon,
           is_active: article.is_active,
-        }).then((res: any) => {
-          if (res.error) console.error('[SUPABASE] Erreur ajout article:', res.error);
-          else console.log('[SUPABASE] Article enregistré avec succès:', article.name);
-        });
+        };
+        const legacyPayload = {
+          id: article.id,
+          category_id: article.category_id,
+          name: article.name,
+          base_price: article.base_price,
+          icon: article.icon,
+          is_active: article.is_active,
+        };
+
+        safeSupabaseUpsert(supabase, 'articles', fullPayload, legacyPayload);
       } else {
         offlineQueue.push({
           id: `act-${Date.now()}`,
@@ -860,30 +1092,554 @@ export function usePressingStore() {
     notifyListeners();
   }, [isSupabaseConfigured]);
 
-  // 6. GESTION DES PARAMÈTRES GÉNÉRAUX
+  // 6. GESTION DES PARAMÈTRES GÉNÉRAUX & SYNCHRO AVEC LE TENANT
   const saveSettings = useCallback((newSettings: Partial<Settings>) => {
+    const currentOrgId = memoryState.currentOrgId || DEFAULT_ORG_ID;
+    const updatedSettings: Settings = {
+      ...memoryState.settings,
+      ...newSettings,
+      organization_id: currentOrgId,
+      updated_at: new Date().toISOString(),
+    };
+
+    const updatedOrgs = memoryState.organizations.map((org) => {
+      if (org.id === currentOrgId) {
+        return {
+          ...org,
+          name: updatedSettings.shop_name || org.name,
+          logo_url: updatedSettings.logo_url !== undefined ? updatedSettings.logo_url : org.logo_url,
+          primary_color: updatedSettings.primary_color || org.primary_color,
+          phone: updatedSettings.phone || org.phone,
+          email: updatedSettings.email !== undefined ? updatedSettings.email : org.email,
+          address: updatedSettings.address || org.address,
+          currency: updatedSettings.currency || org.currency,
+          ticket_header: updatedSettings.ticket_header !== undefined ? updatedSettings.ticket_header : org.ticket_header,
+          ticket_footer: updatedSettings.ticket_footer !== undefined ? updatedSettings.ticket_footer : org.ticket_footer,
+          updated_at: new Date().toISOString(),
+        };
+      }
+      return org;
+    });
+
     memoryState = {
       ...memoryState,
-      settings: {
-        ...memoryState.settings,
-        ...newSettings,
-        updated_at: new Date().toISOString(),
+      settings: updatedSettings,
+      organizations: updatedOrgs,
+      allSettings: {
+        ...memoryState.allSettings,
+        [currentOrgId]: updatedSettings,
       },
     };
 
     if (isSupabaseConfigured && navigator.onLine) {
       const supabase = createSupabaseClient() as any;
-      supabase.from('settings').upsert(memoryState.settings).then();
+      const fullSettingsPayload = updatedSettings;
+      const legacySettingsPayload = {
+        id: updatedSettings.id,
+        shop_name: updatedSettings.shop_name,
+        phone: updatedSettings.phone,
+        address: updatedSettings.address,
+        currency: updatedSettings.currency,
+        default_pickup_days: updatedSettings.default_pickup_days,
+        express_surcharge_percent: updatedSettings.express_surcharge_percent,
+        sms_api_key: updatedSettings.sms_api_key,
+        whatsapp_api_url: updatedSettings.whatsapp_api_url,
+        whatsapp_template: updatedSettings.whatsapp_template,
+      };
+
+      safeSupabaseUpsert(supabase, 'settings', fullSettingsPayload, legacySettingsPayload);
+
+      const currentOrg = updatedOrgs.find((o) => o.id === currentOrgId);
+      if (currentOrg) {
+        supabase.from('organizations').upsert(currentOrg).then((res: any) => {
+          if (res.error && res.error.code !== 'PGRST205') {
+            console.warn('[SUPABASE] Organisation:', res.error.message || res.error);
+          }
+        });
+      }
     }
 
     persistLocal();
     notifyListeners();
-    return memoryState.settings;
+    return updatedSettings;
   }, [isSupabaseConfigured]);
 
-  // 7. RÉINITIALISATION AUX DONNÉES DÉMO
+  // 7. GESTION DU CYCLE DE VIE DES TENANTS (CRÉATION, BASCULE, MODIFICATION, SUPPRESSION)
+  const switchTenant = useCallback((orgId: string) => {
+    const targetOrg = memoryState.organizations.find((o) => o.id === orgId);
+    if (!targetOrg) {
+      console.warn('Tenant non trouvé:', orgId);
+      return;
+    }
+
+    const targetSettings = memoryState.allSettings[orgId] || {
+      ...initialSettings,
+      id: generateUuid(),
+      organization_id: orgId,
+      shop_name: targetOrg.name,
+      phone: targetOrg.phone,
+      email: targetOrg.email,
+      address: targetOrg.address,
+      currency: targetOrg.currency,
+      primary_color: targetOrg.primary_color || '#2563eb',
+      ticket_header: targetOrg.ticket_header,
+      ticket_footer: targetOrg.ticket_footer,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    memoryState = {
+      ...memoryState,
+      currentOrgId: orgId,
+      settings: targetSettings,
+      allSettings: {
+        ...memoryState.allSettings,
+        [orgId]: targetSettings,
+      },
+    };
+
+    persistLocal();
+    notifyListeners();
+  }, []);
+
+  const createTenant = useCallback(async (input: {
+    name: string;
+    slug?: string;
+    phone: string;
+    email?: string;
+    address: string;
+    currency: string;
+    primary_color?: string;
+    ticket_header?: string;
+    ticket_footer?: string;
+    seedCatalog?: boolean;
+  }) => {
+    const newOrgId = generateUuid();
+    const baseSlug = (input.slug?.trim() || input.name.toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '')) || (`pressing-${Date.now().toString(36)}`);
+
+    let uniqueSlug = baseSlug;
+    let counter = 1;
+    while (memoryState.organizations.some((o) => o.slug === uniqueSlug)) {
+      uniqueSlug = `${baseSlug}-${counter++}`;
+    }
+
+    const primaryColor = input.primary_color || '#2563eb';
+    const currency = input.currency || 'FCFA';
+
+    const newOrg: Organization = {
+      id: newOrgId,
+      name: input.name.trim(),
+      slug: uniqueSlug,
+      logo_url: null,
+      primary_color: primaryColor,
+      phone: input.phone.trim(),
+      email: input.email?.trim() || null,
+      address: input.address.trim(),
+      ticket_header: input.ticket_header?.trim() || `*** ${input.name.toUpperCase().trim()} ***`,
+      ticket_footer: input.ticket_footer?.trim() || 'Merci pour votre confiance ! Tout vêtement non réclamé sous 90 jours sera cédé.',
+      currency,
+      is_active: true,
+      subscription_status: 'active',
+      subscription_plan: 'pro',
+      subscription_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      monthly_fee: 25000,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const newSettings: Settings = {
+      id: generateUuid(),
+      organization_id: newOrgId,
+      shop_name: newOrg.name,
+      phone: newOrg.phone,
+      email: newOrg.email,
+      address: newOrg.address,
+      currency: newOrg.currency,
+      logo_url: null,
+      primary_color: primaryColor,
+      ticket_header: newOrg.ticket_header,
+      ticket_footer: newOrg.ticket_footer,
+      default_pickup_days: 2,
+      express_surcharge_percent: 50,
+      sms_api_key: null,
+      whatsapp_api_url: null,
+      whatsapp_template: `Bonjour {{client_name}}, vos vêtements déposés sous le ticket #{{order_number}} sont PRÊTS au pressing ${newOrg.name}. Reste à payer : {{remaining_amount}} {{currency}}. Merci de votre confiance !`,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    let newCategories: Category[] = [];
+    let newServices: Service[] = [];
+    let newArticles: Article[] = [];
+
+    if (input.seedCatalog !== false) {
+      const catalog = createDefaultCatalogForOrg(newOrgId, newOrg.name, currency);
+      newCategories = catalog.categories;
+      newServices = catalog.services;
+      newArticles = catalog.articles;
+    }
+
+    memoryState = {
+      ...memoryState,
+      organizations: [...memoryState.organizations, newOrg],
+      currentOrgId: newOrgId,
+      settings: newSettings,
+      allSettings: {
+        ...memoryState.allSettings,
+        [newOrgId]: newSettings,
+      },
+      categories: [...memoryState.categories, ...newCategories],
+      services: [...memoryState.services, ...newServices],
+      articles: [...memoryState.articles, ...newArticles],
+    };
+
+    persistLocal();
+    notifyListeners();
+
+    if (isSupabaseConfigured && navigator.onLine) {
+      try {
+        const supabase = createSupabaseClient() as any;
+        await supabase.from('organizations').insert(newOrg);
+        await supabase.from('settings').insert(newSettings);
+        if (newCategories.length > 0) {
+          await supabase.from('categories').insert(newCategories);
+        }
+        if (newServices.length > 0) {
+          await supabase.from('services').insert(newServices);
+        }
+        if (newArticles.length > 0) {
+          await supabase.from('articles').insert(newArticles);
+        }
+      } catch (err) {
+        console.warn('[SUPABASE] Erreur synchronisation création tenant:', err);
+      }
+    }
+
+    return newOrg;
+  }, [isSupabaseConfigured]);
+
+  const updateTenant = useCallback((orgId: string, updates: Partial<Organization>) => {
+    const updatedOrgs = memoryState.organizations.map((org) => {
+      if (org.id === orgId) {
+        return {
+          ...org,
+          ...updates,
+          updated_at: new Date().toISOString(),
+        };
+      }
+      return org;
+    });
+
+    const updatedSettings = { ...memoryState.allSettings };
+    if (updatedSettings[orgId]) {
+      updatedSettings[orgId] = {
+        ...updatedSettings[orgId],
+        ...(updates.name ? { shop_name: updates.name } : {}),
+        ...(updates.phone ? { phone: updates.phone } : {}),
+        ...(updates.email !== undefined ? { email: updates.email } : {}),
+        ...(updates.address ? { address: updates.address } : {}),
+        ...(updates.currency ? { currency: updates.currency } : {}),
+        ...(updates.primary_color ? { primary_color: updates.primary_color } : {}),
+        ...(updates.ticket_header !== undefined ? { ticket_header: updates.ticket_header } : {}),
+        ...(updates.ticket_footer !== undefined ? { ticket_footer: updates.ticket_footer } : {}),
+        updated_at: new Date().toISOString(),
+      };
+    }
+
+    const currentSettings = orgId === memoryState.currentOrgId && updatedSettings[orgId]
+      ? updatedSettings[orgId]
+      : memoryState.settings;
+
+    memoryState = {
+      ...memoryState,
+      organizations: updatedOrgs,
+      allSettings: updatedSettings,
+      settings: currentSettings,
+    };
+
+    if (isSupabaseConfigured && navigator.onLine) {
+      const supabase = createSupabaseClient() as any;
+      supabase.from('organizations').update(updates).eq('id', orgId).then();
+      if (updatedSettings[orgId]) {
+        supabase.from('settings').upsert(updatedSettings[orgId]).then();
+      }
+    }
+
+    persistLocal();
+    notifyListeners();
+  }, [isSupabaseConfigured]);
+
+  // 7.b GESTION DES ABONNEMENTS ET ACCÈS SAAS (SUPER ADMIN)
+  const toggleTenantStatus = useCallback((orgId: string, forcedActive?: boolean) => {
+    const target = memoryState.organizations.find((o) => o.id === orgId);
+    if (!target) return;
+
+    const nextActive = forcedActive !== undefined ? forcedActive : !target.is_active;
+    const nextStatus: SubscriptionStatus = nextActive ? 'active' : 'suspended';
+
+    const updatedOrgs = memoryState.organizations.map((org) => {
+      if (org.id === orgId) {
+        return {
+          ...org,
+          is_active: nextActive,
+          subscription_status: nextStatus,
+          updated_at: new Date().toISOString(),
+        };
+      }
+      return org;
+    });
+
+    memoryState = {
+      ...memoryState,
+      organizations: updatedOrgs,
+    };
+
+    persistLocal();
+    notifyListeners();
+
+    if (isSupabaseConfigured && navigator.onLine) {
+      try {
+        const supabase = createSupabaseClient() as any;
+        supabase
+          .from('organizations')
+          .update({
+            is_active: nextActive,
+            subscription_status: nextStatus,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', orgId)
+          .then();
+      } catch (e) {
+        console.warn('[SUPABASE] Erreur maj statut abonnement:', e);
+      }
+    }
+  }, [isSupabaseConfigured]);
+
+  const updateTenantSubscription = useCallback(
+    (
+      orgId: string,
+      data: {
+        plan?: SubscriptionPlan;
+        status?: SubscriptionStatus;
+        expiresAt?: string;
+        monthlyFee?: number;
+      }
+    ) => {
+      const updatedOrgs = memoryState.organizations.map((org) => {
+        if (org.id === orgId) {
+          const newStatus = data.status || org.subscription_status;
+          const isActive = newStatus === 'suspended' ? false : true;
+          return {
+            ...org,
+            subscription_plan: data.plan || org.subscription_plan,
+            subscription_status: newStatus,
+            subscription_expires_at: data.expiresAt !== undefined ? data.expiresAt : org.subscription_expires_at,
+            monthly_fee: data.monthlyFee !== undefined ? data.monthlyFee : org.monthly_fee,
+            is_active: isActive,
+            updated_at: new Date().toISOString(),
+          };
+        }
+        return org;
+      });
+
+      memoryState = {
+        ...memoryState,
+        organizations: updatedOrgs,
+      };
+
+      persistLocal();
+      notifyListeners();
+
+      if (isSupabaseConfigured && navigator.onLine) {
+        try {
+          const supabase = createSupabaseClient() as any;
+          const target = updatedOrgs.find((o) => o.id === orgId);
+          if (target) {
+            supabase
+              .from('organizations')
+              .update({
+                subscription_plan: target.subscription_plan,
+                subscription_status: target.subscription_status,
+                subscription_expires_at: target.subscription_expires_at,
+                monthly_fee: target.monthly_fee,
+                is_active: target.is_active,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', orgId)
+              .then();
+          }
+        } catch (e) {
+          console.warn('[SUPABASE] Erreur maj abonnement:', e);
+        }
+      }
+    },
+    [isSupabaseConfigured]
+  );
+
+  const extendTenantSubscription = useCallback(
+    (orgId: string, daysToAdd: number = 30) => {
+      const target = memoryState.organizations.find((o) => o.id === orgId);
+      if (!target) return;
+
+      const baseDate =
+        target.subscription_expires_at && new Date(target.subscription_expires_at) > new Date()
+          ? new Date(target.subscription_expires_at)
+          : new Date();
+
+      const newExpiresAt = new Date(baseDate.getTime() + daysToAdd * 24 * 60 * 60 * 1000).toISOString();
+
+      updateTenantSubscription(orgId, {
+        status: 'active',
+        expiresAt: newExpiresAt,
+      });
+    },
+    [updateTenantSubscription]
+  );
+
+  const setCurrentUserRole = useCallback((role: MemberRole) => {
+    const updatedUser = {
+      ...memoryState.currentUser,
+      role,
+    };
+    memoryState = {
+      ...memoryState,
+      currentUser: updatedUser,
+    };
+    persistLocal();
+    notifyListeners();
+  }, []);
+
+  const loginUser = useCallback((user: UserSession, orgId?: string) => {
+    let nextOrgId = memoryState.currentOrgId;
+    if (orgId && memoryState.organizations.some((o) => o.id === orgId)) {
+      nextOrgId = orgId;
+    }
+
+    const nextSettings = memoryState.allSettings[nextOrgId] || memoryState.settings;
+
+    const loggedUser: UserSession = {
+      ...user,
+      isLoggedIn: true,
+      organization_id: nextOrgId,
+    };
+
+    memoryState = {
+      ...memoryState,
+      currentUser: loggedUser,
+      currentOrgId: nextOrgId,
+      settings: nextSettings,
+    };
+
+    persistLocal();
+    notifyListeners();
+  }, []);
+
+  const logoutUser = useCallback(async () => {
+    if (isSupabaseConfigured) {
+      try {
+        const supabase = createSupabaseClient();
+        await supabase.auth.signOut();
+      } catch (e) {}
+    }
+
+    const guestUser: UserSession = {
+      id: 'guest',
+      name: 'Invité Déconnecté',
+      email: '',
+      role: 'member',
+      isLoggedIn: false,
+    };
+
+    memoryState = {
+      ...memoryState,
+      currentUser: guestUser,
+    };
+
+    persistLocal();
+    notifyListeners();
+  }, [isSupabaseConfigured]);
+
+  const deleteTenant = useCallback(async (orgId: string) => {
+    if (orgId === DEFAULT_ORG_ID) {
+      return { success: false, message: 'Le tenant racine par défaut ne peut pas être supprimé.' };
+    }
+
+    const remainingOrgs = memoryState.organizations.filter((o) => o.id !== orgId);
+    if (remainingOrgs.length === 0) {
+      return { success: false, message: 'Au moins un établissement doit rester actif.' };
+    }
+
+    const nextActiveId = memoryState.currentOrgId === orgId ? remainingOrgs[0].id : memoryState.currentOrgId;
+    const nextSettings = memoryState.allSettings[nextActiveId] || initialSettings;
+
+    memoryState = {
+      ...memoryState,
+      organizations: remainingOrgs,
+      currentOrgId: nextActiveId,
+      settings: nextSettings,
+      categories: memoryState.categories.filter((c) => c.organization_id !== orgId),
+      services: memoryState.services.filter((s) => s.organization_id !== orgId),
+      articles: memoryState.articles.filter((a) => a.organization_id !== orgId),
+      clients: memoryState.clients.filter((c) => c.organization_id !== orgId),
+      orders: memoryState.orders.filter((o) => o.organization_id !== orgId),
+    };
+
+    persistLocal();
+    notifyListeners();
+
+    if (isSupabaseConfigured && navigator.onLine) {
+      try {
+        const supabase = createSupabaseClient() as any;
+        await supabase.from('organizations').delete().eq('id', orgId);
+      } catch (err) {
+        console.warn('[SUPABASE] Erreur suppression tenant:', err);
+      }
+    }
+
+    return { success: true };
+  }, [isSupabaseConfigured]);
+
+  const seedTenantCatalog = useCallback(async (orgId: string) => {
+    const targetOrg = memoryState.organizations.find((o) => o.id === orgId);
+    if (!targetOrg) return;
+
+    const catalog = createDefaultCatalogForOrg(orgId, targetOrg.name, targetOrg.currency);
+
+    const otherCategories = memoryState.categories.filter((c) => c.organization_id !== orgId);
+    const otherServices = memoryState.services.filter((s) => s.organization_id !== orgId);
+    const otherArticles = memoryState.articles.filter((a) => a.organization_id !== orgId);
+
+    memoryState = {
+      ...memoryState,
+      categories: [...otherCategories, ...catalog.categories],
+      services: [...otherServices, ...catalog.services],
+      articles: [...otherArticles, ...catalog.articles],
+    };
+
+    persistLocal();
+    notifyListeners();
+
+    if (isSupabaseConfigured && navigator.onLine) {
+      try {
+        const supabase = createSupabaseClient() as any;
+        await supabase.from('categories').insert(catalog.categories);
+        await supabase.from('services').insert(catalog.services);
+        await supabase.from('articles').insert(catalog.articles);
+      } catch (e) {
+        console.warn('[SUPABASE] Erreur seed catalogue:', e);
+      }
+    }
+  }, [isSupabaseConfigured]);
+
+  // 8. RÉINITIALISATION AUX DONNÉES DÉMO
   const resetToDemoData = useCallback(() => {
     memoryState = {
+      organizations: [initialOrganization],
+      currentOrgId: DEFAULT_ORG_ID,
+      allSettings: { [DEFAULT_ORG_ID]: initialSettings },
       settings: initialSettings,
       categories: initialCategories,
       services: initialServices,
@@ -896,21 +1652,62 @@ export function usePressingStore() {
     notifyListeners();
   }, []);
 
+  // Partitionnement réactif par tenant pour les composants consommateurs
+  const currentOrgId = activeState.currentOrgId || DEFAULT_ORG_ID;
+  const currentOrganization =
+    activeState.organizations?.find((o) => o.id === currentOrgId) ||
+    activeState.organizations?.[0] ||
+    initialOrganization;
+
+  const currentCategories = activeState.categories.filter(
+    (c) => (c.organization_id || DEFAULT_ORG_ID) === currentOrgId
+  );
+  const currentServices = activeState.services.filter(
+    (s) => (s.organization_id || DEFAULT_ORG_ID) === currentOrgId
+  );
+  const currentArticles = activeState.articles.filter(
+    (a) => (a.organization_id || DEFAULT_ORG_ID) === currentOrgId
+  );
+  const currentClients = activeState.clients.filter(
+    (c) => (c.organization_id || DEFAULT_ORG_ID) === currentOrgId
+  );
+  const currentOrders = activeState.orders.filter(
+    (o) => (o.organization_id || DEFAULT_ORG_ID) === currentOrgId
+  );
+
   return {
-    // États
+    // États Multi-Tenant
+    organizations: activeState.organizations || [initialOrganization],
+    currentOrganization,
+    currentOrgId,
     settings: activeState.settings,
-    categories: activeState.categories,
-    services: activeState.services,
-    articles: activeState.articles,
-    clients: activeState.clients,
-    orders: activeState.orders,
+    categories: currentCategories,
+    services: currentServices,
+    articles: currentArticles,
+    clients: currentClients,
+    orders: currentOrders,
+    allOrders: activeState.orders,
     isMounted: mounted,
     isOnline,
     isSyncing,
     pendingSyncCount: offlineQueue.length,
     lastSyncTime,
 
-    // Actions
+    // Actions Multi-Tenant & SaaS Super Admin
+    currentUser: activeState.currentUser || defaultCurrentUser,
+    setCurrentUserRole,
+    loginUser,
+    logoutUser,
+    createTenant,
+    switchTenant,
+    updateTenant,
+    deleteTenant,
+    seedTenantCatalog,
+    toggleTenantStatus,
+    updateTenantSubscription,
+    extendTenantSubscription,
+
+    // Actions Métier
     createOrder,
     updateOrderStatus,
     checkoutAndDeliverOrder,

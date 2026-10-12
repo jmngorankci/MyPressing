@@ -14,7 +14,9 @@ export type OrderStatus = 'to_process' | 'in_progress' | 'ready' | 'delivered' |
 export type PaymentStatus = 'unpaid' | 'partially_paid' | 'paid';
 export type PaymentMethod = 'cash' | 'wave' | 'orange_money' | 'mtn_momo' | 'card';
 export type ServiceCode = 'wash' | 'iron' | 'full' | 'express';
-export type MemberRole = 'owner' | 'admin' | 'member';
+export type MemberRole = 'super_admin' | 'owner' | 'admin' | 'cashier' | 'workshop' | 'member';
+export type SubscriptionStatus = 'active' | 'trial' | 'past_due' | 'suspended';
+export type SubscriptionPlan = 'starter' | 'pro' | 'enterprise';
 
 export interface Database {
   public: {
@@ -32,6 +34,11 @@ export interface Database {
           ticket_header: string | null;
           ticket_footer: string | null;
           currency: string;
+          is_active: boolean;
+          subscription_status: SubscriptionStatus;
+          subscription_plan: SubscriptionPlan;
+          subscription_expires_at: string | null;
+          monthly_fee: number;
           created_at: string;
           updated_at: string;
         };
@@ -47,6 +54,11 @@ export interface Database {
           ticket_header?: string | null;
           ticket_footer?: string | null;
           currency?: string;
+          is_active?: boolean;
+          subscription_status?: SubscriptionStatus;
+          subscription_plan?: SubscriptionPlan;
+          subscription_expires_at?: string | null;
+          monthly_fee?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -62,6 +74,11 @@ export interface Database {
           ticket_header?: string | null;
           ticket_footer?: string | null;
           currency?: string;
+          is_active?: boolean;
+          subscription_status?: SubscriptionStatus;
+          subscription_plan?: SubscriptionPlan;
+          subscription_expires_at?: string | null;
+          monthly_fee?: number;
           created_at?: string;
           updated_at?: string;
         };
