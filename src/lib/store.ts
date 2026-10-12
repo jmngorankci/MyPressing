@@ -1637,8 +1637,9 @@ export function usePressingStore() {
   // 8. RÉINITIALISATION AUX DONNÉES DÉMO
   const resetToDemoData = useCallback(() => {
     memoryState = {
-      organizations: [initialOrganization],
+      organizations: demoOrganizations,
       currentOrgId: DEFAULT_ORG_ID,
+      currentUser: defaultCurrentUser,
       allSettings: { [DEFAULT_ORG_ID]: initialSettings },
       settings: initialSettings,
       categories: initialCategories,
